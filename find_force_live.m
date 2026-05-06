@@ -1,4 +1,4 @@
-function find_force_live(t, aux_idx, sampFreq)
+function find_force_live(t, aux_idx)
 
 close all
 figure('Color','w');
@@ -10,7 +10,7 @@ xlabel(ax,'Samples');
 ylabel(ax,'Amplitude (offset per channel)');
 
 num_aux = length(aux_idx);
-offset = 20000;   % vertical spacing
+offset = 2000;   % vertical spacing
 
 % Pre‑allocate line handles
 lines = gobjects(num_aux,1);

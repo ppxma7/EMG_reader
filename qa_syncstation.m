@@ -16,7 +16,8 @@ total_channels = num_muovi * channels_per_muovi + channels_sync;
 
 %% === FORCE CHANNEL (in Muovi+ AUX) ===
 % Muovi+ AUX = channels 65–70 inside each Muovi+ block
-force_channel = 65;             % relative index inside each Muovi+ block
+%force_channel = 65;             % relative index inside each Muovi+ block
+force_channel = 141;   % or 142–146 depending on which one moves
 
 %% === MUOVI+ COMMAND STRING (SyncStation format) ===
 % Enable only Muovi+ devices
@@ -113,9 +114,10 @@ else
 
 
 end
-aux_idx = [65:70, 135:140];
-find_force_live(t, aux_idx, sampFreq);
+% check force here
 
+aux_idx = 141:146;
+find_force_live(t, aux_idx);
 
 
 %% === SETUP FIGURE ===
