@@ -2,11 +2,11 @@
 close all; clear; clc;
 
 %% === USER OPTIONS ===
-dryrun = 0;                 % 1 = no hardware
+dryrun = 1;                 % 1 = no hardware
 TCPPort = 54321;
 NumChan = 70;               % 64 EMG + 6 IMU
 sampFreq = 2000;            % Hz
-force_channel = 65;         % load cell amplifier
+force_channel = 66;         % load cell amplifier
 emg_channels = 1:64;
 
 %% === MUOVI+ COMMAND ===
@@ -25,6 +25,7 @@ else
     t.InputBufferSize = 500000;
 
     % Wait for connection
+    disp('waiting for connection...')
     while t.Connected < 1, pause(0.05); end
 
     % Flush buffer
