@@ -1,224 +1,220 @@
 %% qa_syncstation.m — Diagnostic Tool for Muovi+ via SyncStation
-close all; clear all; clc;
+close all; clear; clc;
 
-%% === USER OPTIONS ===
-dryrun = 0;                     % 1 = no hardware
-num_muovi = 2;                  % MANUAL: set to 1 or 2 Muovi+ devices
+% =========================================================================
+%% USER OPTIONS
+% =========================================================================
+dryrun    = 0;          % 1 = no hardware
+num_muovi = 2;          % 1 or 2 Muovi+ devices
 
-TCPPort = 54320;                % SyncStation port
-sampFreq = 2000;                % EMG mode
+TCPPort  = 54320;       % SyncStation TCP port
+sampFreq = 2000;        % EMG sampling rate (Hz)
 
-%% === CHANNEL COUNTS ===
-channels_per_muovi = 70;        % 64 EMG + 6 AUX
-channels_sync = 6;              % SyncStation channels
+% =========================================================================
+%% CHANNEL LAYOUT
+% =========================================================================
+channels_per_muovi = 70;    % 64 EMG + 6 AUX per Muovi+
+channels_sync      = 6;     % SyncStation aux channels
+total_channels     = num_muovi * channels_per_muovi + channels_sync;
 
-total_channels = num_muovi * channels_per_muovi + channels_sync;
+% Force channels (absolute indices in full data matrix)
+force_left  = 141;
+force_right = 142;
+force_sum   = 144;
 
-%% === FORCE CHANNEL (in Muovi+ AUX) ===
-% Muovi+ AUX = channels 65–70 inside each Muovi+ block
-%force_channel = 65;             % relative index inside each Muovi+ block
-force_channel = 141;   % or 142–146 depending on which one moves
+% EMG channel indices (absolute, both Muovi+ devices)
+emg_idx = [1:64, 71:134];
 
-%% === MUOVI+ COMMAND STRING (SyncStation format) ===
-% Enable only Muovi+ devices
+% =========================================================================
+%% BUILD SYNCSTATION COMMAND STRING
+% =========================================================================
 DeviceEN = zeros(1,16);
-EMG = zeros(1,16);
-Mode = zeros(1,16);
+EMG      = zeros(1,16);
+Mode     = zeros(1,16);
 
-% Muovi+ devices are indices 5 and 6 in SyncStation protocol
+% Muovi+ devices occupy slots 5 and 6 in SyncStation protocol
 if num_muovi >= 1
-    DeviceEN(5) = 1; EMG(5) = 1; Mode(5) = 0;   % Muovi+ #1
+    DeviceEN(5) = 1; EMG(5) = 1; Mode(5) = 0;
 end
 if num_muovi == 2
-    DeviceEN(6) = 1; EMG(6) = 1; Mode(6) = 0;   % Muovi+ #2
+    DeviceEN(6) = 1; EMG(6) = 1; Mode(6) = 0;
 end
 
-% Build SyncStation command
-ConfString = zeros(18,1);
+ConfString    = zeros(18,1);
 ConfString(1) = sum(DeviceEN)*2 + 1;
-
 idx = 2;
 for i = 1:16
-    if DeviceEN(i) == 1
+    if DeviceEN(i)
         ConfString(idx) = (i-1)*16 + EMG(i)*8 + Mode(i)*2 + 1;
         idx = idx + 1;
     end
 end
-
 ConfString(idx) = CRC8(ConfString, idx-1);
 ConfLen = idx;
 
-%% === INITIALISE SYNCSTATION OR DRYRUN ===
-
-%% === CONNECT TO SYNCSTATION ===
+% =========================================================================
+%% CONNECT TO SYNCSTATION
+% =========================================================================
 if dryrun
     disp('Dry-run mode: no hardware connected.');
+    t = [];
 else
     disp('Connecting to SyncStation...');
-
-    % Attempt TCP connection
     try
-        t = tcpclient('192.168.76.1', TCPPort, "Timeout", 1);
-        disp('TCP connection opened.');
+        t = tcpclient('192.168.76.1', TCPPort, 'Timeout', 1);
     catch ME
         error('Could not connect to SyncStation: %s', ME.message);
     end
+    disp('TCP connection opened.');
 
-    % Configure buffer
     t.InputBufferSize = total_channels * sampFreq * 3;
     flush(t);
 
-    % Send configuration command
-    write(t, ConfString(1:ConfLen), "uint8");
+    % Send config
+    write(t, ConfString(1:ConfLen), 'uint8');
     pause(0.05);
 
-    % Check for any immediate response
-    if t.NumBytesAvailable > 0
-        disp(['SyncStation responded with ', num2str(t.NumBytesAvailable), ' bytes.']);
-    else
-        disp('No immediate response. Waiting for first data block...');
-    end
-
-    % Wait for first full packet
-    expected_bytes = total_channels * sampFreq * 2;   % 16-bit samples
-
+    % Wait for first packet (1 second of data)
+    expected_bytes = total_channels * sampFreq * 2;   % int16 = 2 bytes
     timeout = tic;
     while t.NumBytesAvailable < expected_bytes
-        if toc(timeout) > 2
-            error('Timeout: SyncStation not sending data.');
+        if toc(timeout) > 5
+            error('Timeout: SyncStation not sending data after 5s.');
         end
+        pause(0.005);
     end
+    disp(['First packet received: ', num2str(t.NumBytesAvailable), ' bytes.']);
 
-    disp(['First packet received: ', num2str(t.NumBytesAvailable), ' bytes available.']);
-
-    % Read first packet
-    Temp = read(t, total_channels*sampFreq, "int16");
-
-    % Validate packet size
-    if numel(Temp) ~= total_channels*sampFreq
+    % Read and validate
+    Temp = read(t, total_channels * sampFreq, 'int16');
+    if numel(Temp) ~= total_channels * sampFreq
         error('Packet size mismatch. Check device count or Mode.');
-    else
-        disp('Packet size OK. SyncStation communication verified.');
     end
-
-    % Optional: print a few EMG samples
     data = reshape(Temp, total_channels, sampFreq);
-    disp('First 5 EMG samples from channel 1:');
-    disp(data(1,1:5));
-
-    mean_per_channel = mean(data, 2);
-    disp(mean_per_channel(1:20));
-
-
-
-
-
+    disp('Packet size OK. SyncStation communication verified.');
+    disp('First 5 EMG samples (ch1):');
+    disp(data(1, 1:5));
 end
-% check force here
 
-aux_idx = 141:146;
-find_force_live(t, aux_idx);
+% =========================================================================
+%% FIGURE SETUP
+% =========================================================================
+fig = figure('Color','w', 'WindowState','maximized');
+tiledlayout(2, 1, 'TileSpacing','compact', 'Padding','compact');
 
+%% Force axis
+N_force = 500;      % rolling window length (samples/updates)
+force_buf_L = zeros(1, N_force);
+force_buf_R = zeros(1, N_force);
+force_buf_S = zeros(1, N_force);
 
-%% === SETUP FIGURE ===
-fig = figure('Color','w','WindowState','maximized');
-tiledlayout(2,1);
-
-%% FORCE AXIS
 ax_force = nexttile;
-hold(ax_force,'on');
-force_line = plot(ax_force, 0, 0, 'r', 'LineWidth', 2);
-title(ax_force,'Force Tap Test');
-xlabel(ax_force,'Samples');
-ylabel(ax_force,'Force');
-ylim(ax_force,[-500 500]);
+hold(ax_force, 'on');
+force_left_line  = plot(ax_force, 1:N_force, force_buf_L, 'r', 'LineWidth', 2);
+force_right_line = plot(ax_force, 1:N_force, force_buf_R, 'b', 'LineWidth', 2);
+force_sum_line   = plot(ax_force, 1:N_force, force_buf_S, 'k', 'LineWidth', 2);
+legend(ax_force, {'Left','Right','Sum'}, 'Location','northwest');
+title(ax_force, 'Force Tap Test');
+xlabel(ax_force, 'Updates');
+ylabel(ax_force, 'Force (a.u.)');
+xlim(ax_force, [1 N_force]);
 
-%% EMG AXIS (downsampled for speed)
+%% EMG axis
+ds     = 20;        % downsample factor for display
+offset = 20000;     % vertical spacing between channels
+n_emg  = 64 * num_muovi;
+n_disp = sampFreq / ds;    % display samples per buffer
+
+emg_buffer = zeros(n_emg, n_disp);
+
 ax_emg = nexttile;
-hold(ax_emg,'on');
-title(ax_emg,'EMG Tap Test (64 channels per Muovi+)');
-xlabel(ax_emg,'Samples');
-ylabel(ax_emg,'Channels');
+hold(ax_emg, 'on');
+title(ax_emg, 'EMG Tap Test (64 channels per Muovi+)');
+xlabel(ax_emg, 'Samples (downsampled)');
+ylabel(ax_emg, 'Channel');
+ylim(ax_emg, [0, n_emg * offset]);
+xlim(ax_emg, [1, n_disp]);
 
-ds = 20;                        % downsample factor
-offset = 200;                   % vertical spacing
-emg_lines = gobjects(64*num_muovi,1);
-
-for ch = 1:(64*num_muovi)
-    emg_lines(ch) = plot(ax_emg, zeros(1, sampFreq/ds), 'LineWidth', 1);
+emg_lines = gobjects(n_emg, 1);
+for ch = 1:n_emg
+    emg_lines(ch) = plot(ax_emg, 1:n_disp, zeros(1, n_disp), ...
+        'Color', [0.5 0.5 0.5], 'LineWidth', 0.5);
 end
 
-ylim(ax_emg, [0 (64*num_muovi)*offset]);
-xlim(ax_emg, [1 sampFreq/ds]);
-
-%% === LATENCY TRACKING ===
-latency_history = zeros(1,2000);
+% =========================================================================
+%% LATENCY TRACKING
+% =========================================================================
+lat_buf = zeros(1, 500);
 lat_idx = 1;
 
-%% === MAIN LOOP ===
-disp('QA running: press q to quit.');
+% =========================================================================
+%% MAIN LOOP
+% =========================================================================
+block    = 200;     % samples to read per update
+n_shift  = block / ds;
+
+disp('QA running — press Q to quit.');
 keyPressed = '';
-set(fig,'KeyPressFcn',@(src,event) assignin('base','keyPressed',event.Key));
+set(fig, 'KeyPressFcn', @(~,e) assignin('base','keyPressed', e.Key));
 
-k = 0;
-
-while ~strcmp(keyPressed,'q')
-
+while ~strcmp(keyPressed, 'q')
     loop_start = tic;
 
-    %% --- READ DATA ---
+    %% Read data block
     if dryrun
-        data = randn(total_channels, sampFreq)*20;
-        % Fake force in Muovi+ #1 AUX
-        data(force_channel,:) = 200 + 20*randn(1,sampFreq);
+        data = randn(total_channels, block) * 20;
+        data(force_left,  :) = 200 + 20*randn(1, block);
+        data(force_right, :) = 180 + 20*randn(1, block);
+        data(force_sum,   :) = 380 + 20*randn(1, block);
     else
-        while t.BytesAvailable < (total_channels * sampFreq * 2)
+        while t.NumBytesAvailable < total_channels * block * 2
+            pause(0.001);
         end
-        Temp = fread(t, total_channels*sampFreq, "int16");
-        data = reshape(Temp, total_channels, sampFreq);
+        Temp = read(t, total_channels * block, 'int16');
+        data = reshape(Temp, total_channels, block);
     end
 
-    %% --- FORCE (from Muovi+ #1 AUX) ---
-    force_raw = mean(data(force_channel,:));
+    %% Force: rolling buffer update
+    force_buf_L = [force_buf_L(2:end),  mean(data(force_left,  :))];
+    force_buf_R = [force_buf_R(2:end),  mean(data(force_right, :))];
+    force_buf_S = [force_buf_S(2:end),  mean(data(force_sum,   :))];
 
-    %% --- EMG EXTRACTION ---
-    % Muovi+ #1 EMG = rows 1:64
-    % Muovi+ #2 EMG = rows 71:134 (if present)
-    emg_block = [];
+    set(force_left_line,  'YData', force_buf_L);
+    set(force_right_line, 'YData', force_buf_R);
+    set(force_sum_line,   'YData', force_buf_S);
 
+    %% EMG: extract, downsample, scroll buffer
+    emg_chunk = zeros(n_emg, n_shift);
     for d = 1:num_muovi
-        start_idx = (d-1)*channels_per_muovi + 1;
-        emg_block = [emg_block; data(start_idx:start_idx+63, 1:ds:end)];
+        src = (d-1)*channels_per_muovi + 1;
+        dst = (d-1)*64 + 1;
+        emg_chunk(dst:dst+63, :) = data(src:src+63, 1:ds:end);
     end
 
-    %% --- UPDATE FORCE PLOT ---
-    k = k + 1;
-    set(force_line, 'XData', [get(force_line,'XData') k], ...
-        'YData', [get(force_line,'YData') force_raw]);
+    emg_buffer          = circshift(emg_buffer, -n_shift, 2);
+    emg_buffer(:, end-n_shift+1:end) = emg_chunk;
 
-    %% --- UPDATE EMG PLOT ---
-    for ch = 1:(64*num_muovi)
-        set(emg_lines(ch), ...
-            'YData', emg_block(ch,:) + (ch-1)*offset);
+    %% Update EMG plot
+    for ch = 1:n_emg
+        set(emg_lines(ch), 'YData', emg_buffer(ch,:) + (ch-1)*offset);
     end
 
-    %% --- LATENCY ---
-    latency_history(lat_idx) = toc(loop_start);
-    lat_idx = lat_idx + 1;
-    if lat_idx > length(latency_history)
-        lat_idx = 1;
-    end
+    %% Latency tracking
+    lat_buf(lat_idx) = toc(loop_start) * 1000;   % ms
+    lat_idx = mod(lat_idx, numel(lat_buf)) + 1;
 
-    drawnow limitrate
+    drawnow limitrate;
 end
 
-%% === STOP SYNCSTATION ===
+% =========================================================================
+%% STOP SYNCSTATION
+% =========================================================================
 if ~dryrun
-    ConfStop = [0; CRC8(0,1)];
-    fwrite(t, ConfStop, 'uint8');
+    ConfStop = [0; CRC8(0, 1)];
+    write(t, ConfStop, 'uint8');
     flush(t);
     clear t;
 end
 
 close all;
-disp('QA finished.');
+fprintf('QA finished. Mean loop latency: %.1f ms\n', mean(lat_buf));
