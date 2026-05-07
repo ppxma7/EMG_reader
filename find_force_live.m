@@ -1,103 +1,77 @@
-function find_force_live(t, aux_idx)
+function find_force_live(t, aux_idx, total_channels, labels)
+% find_force_live(t, aux_idx, total_channels)
+% t               - tcpclient object
+% aux_idx         - vector of channel indices to display e.g. [65:70, 135:140]
+% total_channels  - full channel count for correct reshape
+if nargin < 4
+    labels = string(aux_idx);
+end
 
 close all
 figure('Color','w');
 ax = axes;
 hold(ax,'on');
-
 title(ax,'Live AUX Channels (stacked)');
 xlabel(ax,'Samples');
 ylabel(ax,'Amplitude (offset per channel)');
 
-num_aux = length(aux_idx);
-offset = 25000; %5000;   % vertical spacing for stacked mode
+num_aux = numel(aux_idx);
+offset  = 25000;
 
-% Pre‑allocate line handles
-lines = gobjects(num_aux,1);
+lines = gobjects(num_aux, 1);
 for k = 1:num_aux
     lines(k) = plot(ax, nan, nan);
 end
 
-buffer_length = 10000;
+buffer_length = 100000;
 buffer = zeros(num_aux, buffer_length);
 x = 1:buffer_length;
 
-disp('Plotting AUX channels only. Press q to quit.');
+% Low-pass filter
+Fs = 2000; 
+% fc = 50;
+% [b,a] = butter(4, fc/(Fs/2), 'low');
 
-% Filtering
-Fs = 2000;
-fc = 50;
-[b,a] = butter(4, fc/(Fs/2), 'low');
-
-set(gcf,'KeyPressFcn',@(src,event) assignin('base','keyPressed',event.Key));
+set(gcf, 'KeyPressFcn', @(~,e) assignin('base','keyPressed', e.Key));
 keyPressed = '';
 
-while ~strcmp(keyPressed,'q')
+block_size = 500;  % was 100
+fc = 20;             % was 50 — force barely changes faster than 2Hz
+[b,a] = butter(5, fc/(Fs/2), 'low');  % lower order too, avoid instability at low fc
 
-    % Read a small block (100 samples)
-    block_size = 100;
-    total_channels = max(aux_idx);
-    expected = total_channels * block_size;
+while ~strcmp(keyPressed, 'q')
 
-    while t.NumBytesAvailable < expected
+    while t.NumBytesAvailable < total_channels * block_size * 2
+        pause(0.001);
     end
 
-    Temp = read(t, expected, "int16");
+    Temp = read(t, total_channels * block_size, 'int16');
     data = reshape(Temp, total_channels, block_size);
 
-    % Extract AUX channels only
     aux_data = double(data(aux_idx, :));
 
-    % Apply filtering
     for k = 1:num_aux
         aux_data(k,:) = filtfilt(b, a, aux_data(k,:));
     end
 
     % Scroll buffer
-    buffer(:,1:end-block_size) = buffer(:,block_size+1:end);
-    buffer(:,end-block_size+1:end) = aux_data;
+    buffer = circshift(buffer, -block_size, 2);
+    buffer(:, end-block_size+1:end) = aux_data;
 
-    % Update plot
+    % Update plots
     for k = 1:num_aux
-        y = buffer(k,:);
-
         if num_aux == 1
-            % SINGLE CHANNEL MODE
-            % Auto‑scale amplitude
-            y = y - mean(y);     % center
-            y = y * 5;           % amplify so movement is visible
+            y = (buffer(k,:) - mean(buffer(k,:))) * 5;
         else
-            % STACKED MODE
-            y = y + (k-1)*offset;
+            y = buffer(k,:) + (k-1)*offset;
         end
-
         set(lines(k), 'XData', x, 'YData', y);
     end
 
     xlim(ax, [1 buffer_length]);
-
-    % if num_aux == 1
-    %     % AUTO‑ZOOM Y‑AXIS FOR SINGLE CHANNEL
-    %     sig = buffer(1,:);
-    %     ymin = min(sig) - 2000;
-    %     ymax = max(sig) + 2000;
-    % 
-    %     % If signal is tiny, enforce a minimum zoom window
-    %     if ymax - ymin < 500
-    %         ymin = ymin - 250;
-    %         ymax = ymax + 250;
-    %     end
-    % 
-    %     ylim(ax, [ymin ymax]);
-    % else
-    %     ylim(ax, [0 num_aux*offset*1.5]);
-    % end
     ylim(ax, [-120000 120000]);
-
-    legend(string(aux_idx));
-
+    legend(ax, labels, 'Location','northwest');
     drawnow limitrate
-
 end
 
 disp('Stopped.');

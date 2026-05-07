@@ -5,7 +5,7 @@ close all; clear; clc;
 % =========================================================================
 %% USER OPTIONS
 % =========================================================================
-dryrun   = 0;               % 1 = no hardware, fake data
+dryrun   = 1;               % 1 = no hardware, fake data
 datapath = uigetdir([], 'Select folder to save data');
 side     = 'right';         % reserved for future bilateral support
 
@@ -26,9 +26,9 @@ total_channels     = num_muovi * channels_per_muovi + channels_sync;
 %% CHANNEL LAYOUT
 % =========================================================================
 % Force channels — absolute indices in full data matrix (from QA script)
-force_left  = 141;
-force_right = 142;
-force_sum   = 144;
+force_left  = 144;
+force_right = 141;
+%force_sum   = 141;
 
 % EMG channels — absolute indices for both Muovi+ devices
 emg_channels = [1:64, 71:134];   % 128 channels total
@@ -68,7 +68,7 @@ save(fullfile(datapath, 'setup.mat'), ...
     'dryrun', 'datapath', 'side', ...
     'TCPPort', 'sampFreq', 'num_muovi', ...
     'channels_per_muovi', 'channels_sync', 'total_channels', ...
-    'force_left', 'force_right', 'force_sum', ...
+    'force_left', 'force_right', ...
     'emg_channels', ...
     'block_samples', 'ds', 'offsettime', ...
     'mvc_duration', ...

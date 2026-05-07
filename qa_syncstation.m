@@ -18,8 +18,8 @@ channels_sync      = 6;     % SyncStation aux channels
 total_channels     = num_muovi * channels_per_muovi + channels_sync;
 
 % Force channels (absolute indices in full data matrix)
-force_left  = 141;
-force_right = 142;
+force_left  = 142;
+force_right = 143;
 force_sum   = 144;
 
 % EMG channel indices (absolute, both Muovi+ devices)
@@ -90,16 +90,15 @@ else
     if numel(Temp) ~= total_channels * sampFreq
         error('Packet size mismatch. Check device count or Mode.');
     end
-    data = reshape(Temp, total_channels, sampFreq);
-    disp('Packet size OK. SyncStation communication verified.');
-    disp('First 5 EMG samples (ch1):');
-    disp(data(1, 1:5));
+ 
 end
 
 % =========================================================================
 %% FIGURE SETUP
 % =========================================================================
-fig = figure('Color','w', 'WindowState','maximized');
+%fig = figure('Color','w', 'WindowState','maximized');
+
+fig = figure;
 tiledlayout(2, 1, 'TileSpacing','compact', 'Padding','compact');
 
 %% Force axis
@@ -172,6 +171,11 @@ while ~strcmp(keyPressed, 'q')
         end
         Temp = read(t, total_channels * block, 'int16');
         data = reshape(Temp, total_channels, block);
+
+        chans = [65:70, 135:140, 141:146];
+        stds  = arrayfun(@(i) std(double(data(i,:))), chans);
+        [sorted_stds, sort_idx] = sort(stds, 'descend');
+        fprintf('ch %d: std=%.0f\n', [chans(sort_idx); round(sorted_stds)]);
     end
 
     %% Force: rolling buffer update
@@ -205,6 +209,8 @@ while ~strcmp(keyPressed, 'q')
 
     drawnow limitrate;
 end
+
+find_force_live(t, [141, 142, 144], total_channels, ["A", "B", "C"]);
 
 % =========================================================================
 %% STOP SYNCSTATION
