@@ -1,35 +1,6 @@
 %% experiment_muovi.m — Force tracing + EMG recording via SyncStation
 % Requires: setup_muovi.m to have been run first
-function experiment_muovi(varargin)
-
-% parser
-
-% Default parameters
-mvc_mode     = 'bilateral';   % 'left' | 'right' | 'bilateral'
-mvc_override = [];            % numeric MVC value
-
-trap_ramp_s = 2;
-trap_hold_s = 4;
-trap_level  = 0.7;
-lead_in = 2;
-
-
-% Parse name/value pairs
-for k = 1:2:numel(varargin)
-    key = lower(varargin{k});
-    val = varargin{k+1};
-    switch key
-        case 'mvc'
-            mvc_mode = lower(val);
-        case 'trap'
-            trap_level = val / 100;   % user gives percent
-        case 'mvcvalue'
-            mvc_override = val;
-        otherwise
-            error('Unknown parameter: %s', key);
-    end
-end
-
+close all; clear; clc;
 
 % =========================================================================
 %% LOAD SETUP
@@ -110,8 +81,7 @@ offset_buf_S = zeros(1, offset_n);
 if dryrun
     offset_buf_L(:) = -6790;
     offset_buf_R(:) = -24227;
-    %offset_buf_S(:) = -8294;
-    offset_buf_S(:) = offset_buf_L + offset_buf_R;
+    offset_buf_S(:) = -8294;
 else
     col = 1;
     while col <= offset_n
@@ -141,36 +111,15 @@ mvc_force  = [];
 mvc_emg    = [];
 mvc_done   = false;
 
-% If user supplied an MVC value, skip MVC acquisition
-if ~isempty(mvc_override)
-    mvc_value = mvc_override;
-    mvc_done  = true;
-    fprintf('Using user-supplied MVC = %.1f\n', mvc_value);
-end
+updates_per_sec = sampFreq / block_samples;
+ramp_steps      = round(trap_ramp_s * updates_per_sec);
+hold_steps      = round(trap_hold_s * updates_per_sec);
 
-if ~isempty(trap_level)
-    updates_per_sec = sampFreq / block_samples;
-    ramp_steps      = round(trap_ramp_s * updates_per_sec);
-    hold_steps      = round(trap_hold_s * updates_per_sec);
-
-    lead_steps = round(lead_in * updates_per_sec);   % 3s flat lead-in and lead-out
-
-    % target_trace = [linspace(0, trap_level, ramp_steps), ...
-    %     trap_level * ones(1, hold_steps), ...
-    %     linspace(trap_level, 0, ramp_steps)];
-
-    target_trace = [zeros(1, lead_steps),              ...
-                linspace(0, trap_level, ramp_steps), ...
-                trap_level * ones(1, hold_steps),    ...
-                linspace(trap_level, 0, ramp_steps), ...
-                zeros(1, lead_steps)];
-
-    n_target       = numel(target_trace);
-    target_display = target_trace;
-end
-
-
-
+target_trace = [linspace(0, trap_level, ramp_steps), ...
+    trap_level * ones(1, hold_steps),    ...
+    linspace(trap_level, 0, ramp_steps)];
+n_target       = numel(target_trace);
+target_display = target_trace;   % 0–1 fraction, same scale as normalised force
 
 % =========================================================================
 %% FIGURE: FORCE
@@ -189,9 +138,7 @@ hold(ax_force, 'on');
 force_left_line  = plot(ax_force, 1:N_disp, force_buf_L, 'r',     'LineWidth', 1.5);
 force_right_line = plot(ax_force, 1:N_disp, force_buf_R, 'b',     'LineWidth', 1.5);
 force_sum_line   = plot(ax_force, 1:N_disp, force_buf_S, 'k',     'LineWidth', 2);
-target_line      = plot(ax_force, 1:N_disp, NaN(1,N_disp), 'g', 'LineWidth', 5);
-
-cursor_line = xline(ax_force, round(0.7 * N_disp), 'k:', 'LineWidth', 1.5);
+target_line      = plot(ax_force, 1:N_disp, NaN(1,N_disp), 'g--', 'LineWidth', 2);
 
 legend(ax_force, {'Left','Right','Sum','Target'}, 'Location','northwest');
 title(ax_force, 'Force — press M for MVC, T for task, Q to quit');
@@ -218,15 +165,9 @@ ylim(ax_emg, emg_ylim_std);
 % =========================================================================
 %% KEY HANDLER & STATE
 % =========================================================================
-% keyPressed = '';
-% set(force_fig, 'KeyPressFcn', @(~,e) assignin('base','keyPressed', e.Key));
-% set(emg_fig,   'KeyPressFcn', @(~,e) assignin('base','keyPressed', e.Key));
-
-guidata(force_fig, struct('pressed', ''));
-set(force_fig, 'KeyPressFcn', @(src,e) guidata(src, setfield(guidata(src),'pressed',e.Key)));
-set(emg_fig,   'KeyPressFcn', @(~,e)   guidata(force_fig, setfield(guidata(force_fig),'pressed',e.Key)));
-
-
+keyPressed = '';
+set(force_fig, 'KeyPressFcn', @(~,e) assignin('base','keyPressed', e.Key));
+set(emg_fig,   'KeyPressFcn', @(~,e) assignin('base','keyPressed', e.Key));
 
 state  = 'idle';
 k      = 0;
@@ -241,38 +182,25 @@ disp('Ready. Keys: M = MVC, T = start task, Q = quit');
 % =========================================================================
 %% MAIN LOOP
 % =========================================================================
-%while ~strcmp(keyPressed, 'q')
-while ~strcmp(guidata(force_fig).pressed, 'q')
-
-    keyPressed = guidata(force_fig).pressed;
+while ~strcmp(keyPressed, 'q')
 
     %% READ BLOCK
     if dryrun
         % --- FORCE SIMULATION ---
-        % Baseline noise
-        fL = -7000  + 200*randn(1, block_samples);
+        fL = -7000 + 200*randn(1, block_samples);
         fR = -24000 + 200*randn(1, block_samples);
 
-        % MVC behaviour: smooth Gaussian push
         if strcmp(state,'mvc')
-            bump = 3000 * exp(-((1:block_samples)-block_samples/2).^2 / (2*(block_samples/4)^2));
-            fL = fL - bump;
-            fR = fR - bump;
-
-            % Task behaviour: more irregular force
+            fL = fL - 3000*exp(-((1:block_samples)-block_samples/2).^2/(2*(block_samples/4)^2));
+            fR = fR - 3000*exp(-((1:block_samples)-block_samples/2).^2/(2*(block_samples/4)^2));
         elseif strcmp(state,'task')
             fL = fL - 1500*rand(1, block_samples);
             fR = fR - 1500*rand(1, block_samples);
         end
 
-        % Bilateral sum (this is what was missing)
-        fS = fL + fR;
-
-        % Fill data matrix
         data = zeros(total_channels, block_samples);
         data(force_left,  :) = fL;
         data(force_right, :) = fR;
-        data(force_sum,   :) = fS;   % <-- FIXED: now included
 
         % --- EMG SIMULATION ---
         emg_noise = 50 * randn(n_emg, block_samples);
@@ -284,7 +212,6 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         end
 
         data(emg_channels, :) = emg_noise;
-
     else
         while t.NumBytesAvailable < total_channels * block_samples * 2
             pause(0.001);
@@ -292,7 +219,6 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         Temp = read(t, total_channels * block_samples, 'int16');
         data = reshape(Temp, total_channels, block_samples);
     end
-
 
     %% EXTRACT FORCE (offset-corrected, negated so push = positive)
 
@@ -340,18 +266,10 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % =====================================================================
     %% KEY: MVC
     if strcmp(keyPressed, 'm') && ~strcmp(state, 'mvc')
-        guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
         keyPressed = '';
         state      = 'mvc';
         mvc_value  = 0;
         disp('MVC started — push as hard as possible...');
-
-        % Default offset for MVC — overridden by mvc_mode switch in hardware branch
-        switch mvc_mode
-            case 'left',     offset = force_offset_L;
-            case 'right',    offset = force_offset_R;
-            case 'bilateral', offset = force_offset;
-        end
 
         mvc_n         = mvc_duration * sampFreq;
         mvc_force_raw = zeros(1, mvc_n);
@@ -373,21 +291,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 d_mvc = reshape(Temp, total_channels, block_samples);
 
                 % extract EMG + force
-                % Select force channel based on MVC mode
-                switch mvc_mode
-                    case 'left'
-                        chunk_f = double(d_mvc(force_left,:));
-                        %offset  = force_offset_L;
-
-                    case 'right'
-                        chunk_f = double(d_mvc(force_right,:));
-                        %offset  = force_offset_R;
-
-                    case 'bilateral'
-                        chunk_f = double(d_mvc(force_sum,:));
-                        %offset  = force_offset;
-                end
-                %chunk_f = double(d_mvc(force_sum, :));
+                chunk_f = double(d_mvc(force_left, :));   % LEFT ONLY for MVC raw
                 chunk_e = d_mvc(emg_channels, :);
             end
 
@@ -418,11 +322,8 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             drawnow limitrate;
         end
 
-        %% FINAL MVC VALUE
-        %mvc_value = max(-(mvc_force_raw - force_offset_L));
-
-        mvc_value = max(-(mvc_force_raw - offset));
-
+        %% FINAL MVC VALUE (use LEFT only or max of both)
+        mvc_value = max(-(mvc_force_raw - force_offset_L));
 
         mvc_force = mvc_force_raw;
         mvc_emg   = mvc_emg_raw;
@@ -447,20 +348,9 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     if strcmp(keyPressed, 't') && ~strcmp(state, 'task')
         if ~mvc_done
             disp('Run MVC first (press M).');
-            guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
             keyPressed = '';
         else
-            guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
             keyPressed = '';
-
-            % Countdown
-            for ct = 3:-1:1
-                title(ax_force, sprintf('Starting in %d...', ct));
-                drawnow;
-                pause(1);
-            end
-            title(ax_force, 'Force — press M for MVC, T for task, Q to quit');
-
             state      = 'task';
             task_k     = 1;
 
@@ -477,25 +367,11 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % =====================================================================
     if strcmp(state, 'task')
         if task_k <= n_target
-            % % Build scrolling target buffer
-            % target_buf = NaN(1, N_disp);
-            % t_pos      = max(1, N_disp - task_k + 1);
-            % len        = min(task_k, N_disp);
-            % target_buf(t_pos:end) = target_display(max(1, task_k-len+1):task_k);
-            % set(target_line, 'YData', target_buf);
-
-
-            lookahead  = round(0.3 * N_disp);   % current position 30% from right
-            cursor_pos = N_disp - lookahead;    % x position of "now"
-
-            % Fill target buffer centred on cursor_pos
+            % Build scrolling target buffer
             target_buf = NaN(1, N_disp);
-            for x = 1:N_disp
-                t_idx = task_k + (x - cursor_pos);
-                if t_idx >= 1 && t_idx <= n_target
-                    target_buf(x) = target_display(t_idx);
-                end
-            end
+            t_pos      = max(1, N_disp - task_k + 1);
+            len        = min(task_k, N_disp);
+            target_buf(t_pos:end) = target_display(max(1, task_k-len+1):task_k);
             set(target_line, 'YData', target_buf);
 
             % Store
@@ -516,7 +392,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             state = 'idle';
         end
     end
-    %pause(block_samples / sampFreq);   % slow dry-run to real-time
+    pause(block_samples / sampFreq);   % slow dry-run to real-time
     k = k + 1;
     drawnow limitrate;
 end
@@ -533,6 +409,3 @@ end
 
 close all;
 disp('Experiment finished.');
-
-
-end

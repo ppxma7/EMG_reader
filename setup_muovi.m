@@ -26,9 +26,9 @@ total_channels     = num_muovi * channels_per_muovi + channels_sync;
 %% CHANNEL LAYOUT
 % =========================================================================
 % Force channels — absolute indices in full data matrix (from QA script)
-force_left  = 144;
-force_right = 141;
-%force_sum   = 141;
+force_left  = 141;
+force_right = 142;
+force_sum   = 144;
 
 % EMG channels — absolute indices for both Muovi+ devices
 emg_channels = [1:64, 71:134];   % 128 channels total
@@ -57,9 +57,9 @@ emg_ylim_std = [0 25000];      % for activity bar chart
 % =========================================================================
 % Target profile types: 'trapezoid', 'mvc', 'ramp', 'constant'
 % These are used by experiment_muovi.m to build the target trace
-trap_ramp_s   = 2;          % trapezoid ramp duration (s)
-trap_hold_s   = 5;          % trapezoid hold duration (s)
-trap_level    = 0.5;        % hold level as fraction of MVC (0–1)
+% trap_ramp_s   = 2;          % trapezoid ramp duration (s)
+% trap_hold_s   = 5;          % trapezoid hold duration (s)
+% trap_level    = 0.5;        % hold level as fraction of MVC (0–1)
 
 % =========================================================================
 %% SAVE SETUP
@@ -68,11 +68,13 @@ save(fullfile(datapath, 'setup.mat'), ...
     'dryrun', 'datapath', 'side', ...
     'TCPPort', 'sampFreq', 'num_muovi', ...
     'channels_per_muovi', 'channels_sync', 'total_channels', ...
-    'force_left', 'force_right', ...
+    'force_left', 'force_right', 'force_sum', ...
     'emg_channels', ...
     'block_samples', 'ds', 'offsettime', ...
     'mvc_duration', ...
-    'force_ylim', 'emg_offset', 'emg_ylim_std', ...
-    'trap_ramp_s', 'trap_hold_s', 'trap_level');
+    'force_ylim', 'emg_offset', 'emg_ylim_std');
+% 
+% , ...
+%     'trap_ramp_s', 'trap_hold_s', 'trap_level');
 
 disp('Setup saved. Run experiment_muovi.m to begin.');
