@@ -1,43 +1,78 @@
-%% setup_muovi.m
+%% setup_muovi.m — Configure and save experiment parameters
+% Run this once before experiment_muovi.m
 close all; clear; clc;
 
-%% === USER OPTIONS ===
-dryrun      = 0;                % 1 = no hardware, fake data
-datapath    = uigetdir([], 'Select folder to save setup');
-side        = 'right';          % reserved for future bilateral support
+% =========================================================================
+%% USER OPTIONS
+% =========================================================================
+dryrun   = 0;               % 1 = no hardware, fake data
+datapath = uigetdir([], 'Select folder to save data');
+side     = 'right';         % reserved for future bilateral support
 
-%% === MUOVI+ PARAMETERS ===
-TCPPort     = 54321;
-ProbeEN     = 1;                % enable probe
-EMGmode     = 1;                % EMG = 2000 Hz
-Mode        = 0;                % 64ch monopolar
-NumChan     = 70;               % 64 EMG + 6 IMU
-sampFreq    = 2000;             % Hz
+% =========================================================================
+%% HARDWARE PARAMETERS
+% =========================================================================
+TCPPort  = 54320;           % SyncStation TCP port (match QA script)
+sampFreq = 2000;            % Hz
+num_muovi = 2;              % 1 or 2 Muovi+ devices
 
-%% === FORCE CHANNEL ===
-% Your load cell amplifier is wired into AUX → appears as channel 65
-force_channel = 65;
+% SyncStation command encoding
+channels_per_muovi = 70;    % 64 EMG + 6 AUX
+channels_sync      = 6;
+total_channels     = num_muovi * channels_per_muovi + channels_sync;
 
-%% === EMG CHANNELS ===
-% Muovi+ EMG channels = 1:64
-emg_channels = 1:64;
 
-%% === FEEDBACK PARAMETERS ===
-rate        = 1/15.625;         % update rate
-offsettime  = 0.5;              % seconds for offset collection
+% =========================================================================
+%% CHANNEL LAYOUT
+% =========================================================================
+% Force channels — absolute indices in full data matrix (from QA script)
+force_left  = 141;
+force_right = 142;
+force_sum   = 144;
 
-%% === PLOT SETTINGS ===
-force_ylim   = [-500 500];       % adjust as needed
-force_title  = 'Force Feedback';
+% EMG channels — absolute indices for both Muovi+ devices
+emg_channels = [1:64, 71:134];   % 128 channels total
 
-emg_offset   = 200;              % vertical spacing between EMG channels
-emg_ylim     = [0, 64*emg_offset];
+% =========================================================================
+%% ACQUISITION PARAMETERS
+% =========================================================================
+block_samples = 200;        % samples per read loop iteration
+ds            = 20;         % EMG display downsample factor
+offsettime    = 0.5;        % seconds of baseline to collect for offset
 
-%% === SAVE SETUP ===
-save(fullfile(datapath,'setup.mat'), ...
-    'dryrun','datapath','side', ...
-    'TCPPort','ProbeEN','EMGmode','Mode','NumChan','sampFreq', ...
-    'force_channel','emg_channels','rate','offsettime', ...
-    'force_ylim','force_title','emg_offset','emg_ylim');
+% =========================================================================
+%% MVC PARAMETERS
+% =========================================================================
+mvc_duration = 3;           % seconds
 
-disp('Setup saved successfully.');
+% =========================================================================
+%% DISPLAY PARAMETERS
+% =========================================================================
+force_ylim  = [-30000 5000];   % pre-offset raw units (will rescale after offset)
+emg_offset  = 20000;        % vertical spacing between EMG channels (raw units)
+emg_ylim_std = [0 25000];      % for activity bar chart
+
+% =========================================================================
+%% TASK PARAMETERS
+% =========================================================================
+% Target profile types: 'trapezoid', 'mvc', 'ramp', 'constant'
+% These are used by experiment_muovi.m to build the target trace
+trap_ramp_s   = 2;          % trapezoid ramp duration (s)
+trap_hold_s   = 5;          % trapezoid hold duration (s)
+trap_level    = 0.5;        % hold level as fraction of MVC (0–1)
+
+% =========================================================================
+%% SAVE SETUP
+% =========================================================================
+save(fullfile(datapath, 'setup.mat'), ...
+    'dryrun', 'datapath', 'side', ...
+    'TCPPort', 'sampFreq', 'num_muovi', ...
+    'channels_per_muovi', 'channels_sync', 'total_channels', ...
+    'force_left', 'force_right', 'force_sum', ...
+    'emg_channels', ...
+    'block_samples', 'ds', 'offsettime', ...
+    'mvc_duration', ...
+    'force_ylim', 'emg_offset', 'emg_ylim_std', ...
+    'trap_ramp_s', 'trap_hold_s', 'trap_level');
+
+disp('Setup saved. Run experiment_muovi.m to begin.');
