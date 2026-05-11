@@ -18,8 +18,8 @@ channels_sync      = 6;     % SyncStation aux channels
 total_channels     = num_muovi * channels_per_muovi + channels_sync;
 
 % Force channels (absolute indices in full data matrix)
-force_left  = 142;
-force_right = 143;
+force_left  = 141;
+force_right = 142;
 force_sum   = 144;
 
 % EMG channel indices (absolute, both Muovi+ devices)
@@ -172,10 +172,10 @@ while ~strcmp(keyPressed, 'q')
         Temp = read(t, total_channels * block, 'int16');
         data = reshape(Temp, total_channels, block);
 
-        chans = [65:70, 135:140, 141:146];
-        stds  = arrayfun(@(i) std(double(data(i,:))), chans);
-        [sorted_stds, sort_idx] = sort(stds, 'descend');
-        fprintf('ch %d: std=%.0f\n', [chans(sort_idx); round(sorted_stds)]);
+        % chans = [65:70, 135:140, 141:146];
+        % stds  = arrayfun(@(i) std(double(data(i,:))), chans);
+        % [sorted_stds, sort_idx] = sort(stds, 'descend');
+        % fprintf('ch %d: std=%.0f\n', [chans(sort_idx); round(sorted_stds)]);
     end
 
     %% Force: rolling buffer update
@@ -210,7 +210,10 @@ while ~strcmp(keyPressed, 'q')
     drawnow limitrate;
 end
 
-find_force_live(t, [141, 142, 144], total_channels, ["A", "B", "C"]);
+%find_force_live(t, [141, 142, 144], total_channels, ["A", "B", "C"]);
+
+find_force_live(t, [141:144], total_channels);
+
 
 % =========================================================================
 %% STOP SYNCSTATION

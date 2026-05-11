@@ -5,7 +5,7 @@ close all; clear; clc;
 % =========================================================================
 %% USER OPTIONS
 % =========================================================================
-dryrun   = 1;               % 1 = no hardware, fake data
+dryrun   = 0;               % 1 = no hardware, fake data
 datapath = uigetdir([], 'Select folder to save data');
 side     = 'right';         % reserved for future bilateral support
 

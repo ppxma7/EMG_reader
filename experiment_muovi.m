@@ -9,10 +9,10 @@ mvc_mode     = 'bilateral';   % 'left' | 'right' | 'bilateral'
 mvc_override = [];            % numeric MVC value
 
 trap_ramp_s = 2;
-trap_hold_s = 4;
-trap_level  = 0.7;
-lead_in = 2;
-
+trap_hold_s = 10;
+trap_level  = 0.2;
+lead_in = 5;
+task_shape   = 'sombrero';    % 'trap' | 'sombrero'
 
 % Parse name/value pairs
 for k = 1:2:numel(varargin)
@@ -25,6 +25,8 @@ for k = 1:2:numel(varargin)
             trap_level = val / 100;   % user gives percent
         case 'mvcvalue'
             mvc_override = val;
+        case 'shape'
+            task_shape = lower(val);
         otherwise
             error('Unknown parameter: %s', key);
     end
@@ -96,6 +98,10 @@ end
 
 [b_force, a_force] = butter(4, 20/(sampFreq/2), 'low');
 
+% Before main loop — initialise filter states
+zi_L = zeros(max(length(a_force), length(b_force)) - 1, 1);
+zi_R = zeros(max(length(a_force), length(b_force)) - 1, 1);
+zi_S = zeros(max(length(a_force), length(b_force)) - 1, 1);
 
 % =========================================================================
 %% COLLECT FORCE BASELINE OFFSET
@@ -133,6 +139,8 @@ force_offset_R = mean(offset_buf_R);
 force_offset   = mean(offset_buf_S);
 fprintf('Offsets — L: %.0f  R: %.0f  Sum: %.0f\n', force_offset_L, force_offset_R, force_offset);
 
+
+
 % =========================================================================
 %% MVC & TARGET — initialise
 % =========================================================================
@@ -152,18 +160,40 @@ if ~isempty(trap_level)
     updates_per_sec = sampFreq / block_samples;
     ramp_steps      = round(trap_ramp_s * updates_per_sec);
     hold_steps      = round(trap_hold_s * updates_per_sec);
-
     lead_steps = round(lead_in * updates_per_sec);   % 3s flat lead-in and lead-out
 
     % target_trace = [linspace(0, trap_level, ramp_steps), ...
     %     trap_level * ones(1, hold_steps), ...
     %     linspace(trap_level, 0, ramp_steps)];
 
-    target_trace = [zeros(1, lead_steps),              ...
+    % target_trace = [zeros(1, lead_steps),              ...
+    %     linspace(0, trap_level, ramp_steps), ...
+    %     trap_level * ones(1, hold_steps),    ...
+    %     linspace(trap_level, 0, ramp_steps), ...
+    %     zeros(1, lead_steps)];
+
+    switch task_shape
+        case 'trap'
+            target_trace = [zeros(1, lead_steps), ...
                 linspace(0, trap_level, ramp_steps), ...
-                trap_level * ones(1, hold_steps),    ...
+                trap_level * ones(1, hold_steps), ...
                 linspace(trap_level, 0, ramp_steps), ...
                 zeros(1, lead_steps)];
+
+        case 'sombrero'
+            brim_level  = trap_level * 0.4;
+            brim_steps  = round(1.5 * updates_per_sec);
+            dip_steps   = round(1.0 * updates_per_sec);
+            target_trace = [zeros(1, lead_steps), ...
+                linspace(0, brim_level, ramp_steps), ...
+                brim_level * ones(1, brim_steps), ...
+                linspace(brim_level, trap_level, dip_steps), ...
+                trap_level * ones(1, hold_steps), ...
+                linspace(trap_level, brim_level, dip_steps), ...
+                brim_level * ones(1, brim_steps), ...
+                linspace(brim_level, 0, ramp_steps), ...
+                zeros(1, lead_steps)];
+    end
 
     n_target       = numel(target_trace);
     target_display = target_trace;
@@ -176,6 +206,7 @@ end
 %% FIGURE: FORCE
 % =========================================================================
 N_disp = round(10 * updates_per_sec);   % 10-second rolling window
+cursor_pos = round(0.7 * N_disp);
 
 force_buf_L = zeros(1, N_disp);
 force_buf_R = zeros(1, N_disp);
@@ -191,13 +222,16 @@ force_right_line = plot(ax_force, 1:N_disp, force_buf_R, 'b',     'LineWidth', 1
 force_sum_line   = plot(ax_force, 1:N_disp, force_buf_S, 'k',     'LineWidth', 2);
 target_line      = plot(ax_force, 1:N_disp, NaN(1,N_disp), 'g', 'LineWidth', 5);
 
-cursor_line = xline(ax_force, round(0.7 * N_disp), 'k:', 'LineWidth', 1.5);
+tracker_ball = plot(ax_force, cursor_pos, 0, 'ko', ...
+    'MarkerSize', 16, 'MarkerFaceColor', 'k', 'Visible', 'off');
+
+%cursor_line = xline(ax_force, round(0.7 * N_disp), 'k:', 'LineWidth', 1.5);
 
 legend(ax_force, {'Left','Right','Sum','Target'}, 'Location','northwest');
 title(ax_force, 'Force — press M for MVC, T for task, Q to quit');
 xlabel(ax_force, 'Updates');
 ylabel(ax_force, 'Force (raw units)');
-ylim(ax_force, [-500 8000]);
+ylim(ax_force, [-80000 80000]);
 ax_force.YLimMode = 'manual';
 xlim(ax_force, [1 N_disp]);
 
@@ -236,7 +270,12 @@ task_force  = [];
 task_emg    = [];
 task_target = [];
 
-disp('Ready. Keys: M = MVC, T = start task, Q = quit');
+%disp('Ready. Keys: M = MVC, T = start task, Q = quit');
+
+disp('Ready. Keys: M = MVC, T = start task, O = recalibrate offset, Q = quit');
+
+
+
 
 % =========================================================================
 %% MAIN LOOP
@@ -296,9 +335,18 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
     %% EXTRACT FORCE (offset-corrected, negated so push = positive)
 
-    fL = filtfilt(b_force, a_force, double(data(force_left,  :)));
-    fR = filtfilt(b_force, a_force, double(data(force_right, :)));
-    fS = filtfilt(b_force, a_force, double(data(force_sum,   :)));
+    % fL = filtfilt(b_force, a_force, double(data(force_left,  :)));
+    % fR = filtfilt(b_force, a_force, double(data(force_right, :)));
+    % fS = filtfilt(b_force, a_force, double(data(force_sum,   :)));
+
+    % Replace filtfilt lines in main loop with:
+    % [fL, zi_L] = filter(b_force, a_force, double(data(force_left,  :)), zi_L);
+    % [fR, zi_R] = filter(b_force, a_force, double(data(force_right, :)), zi_R);
+    % [fS, zi_S] = filter(b_force, a_force, double(data(force_sum,   :)), zi_S);
+
+    fL = double(data(force_left,  :));
+    fR = double(data(force_right, :));
+    fS = double(data(force_sum,   :));
 
     force_L = -(mean(fL) - force_offset_L);
     force_R = -(mean(fR) - force_offset_R);
@@ -325,11 +373,21 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     %% UPDATE FORCE PLOT
     force_buf_L = [force_buf_L(2:end), disp_L];
     force_buf_R = [force_buf_R(2:end), disp_R];
-    force_buf_S = [force_buf_S(2:end), disp_S];
-
+    % force_buf_S = [force_buf_S(2:end), disp_S];
+    % 
     set(force_left_line,  'YData', force_buf_L);
     set(force_right_line, 'YData', force_buf_R);
-    set(force_sum_line,   'YData', force_buf_S);
+    % set(force_sum_line,   'YData', force_buf_S);
+
+    if ~strcmp(state, 'task')
+        force_buf_S = [force_buf_S(2:end), disp_S];
+        set(force_sum_line, 'YData', force_buf_S);
+    end
+
+
+    if strcmp(state, 'task')
+        set(tracker_ball, 'XData', cursor_pos, 'YData', disp_S);
+    end
 
     %% UPDATE EMG BARS
     emg_std_buf = std(double(emg_block), 0, 2);
@@ -404,17 +462,20 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             if dryrun
                 f_L = -(mean(chunk_f) - force_offset_L);
                 f_R = -(mean(chunk_f) - force_offset_R);
+                f_S = f_L + f_R;
             else
                 f_L = -(mean(double(d_mvc(force_left,  :))) - force_offset_L);
                 f_R = -(mean(double(d_mvc(force_right, :))) - force_offset_R);
+                f_S = -(mean(double(d_mvc(force_sum,   :))) - force_offset);
             end
 
             force_buf_L = [force_buf_L(2:end), f_L];
             force_buf_R = [force_buf_R(2:end), f_R];
+            force_buf_S = [force_buf_S(2:end), f_S];
 
             set(force_left_line,  'YData', force_buf_L);
             set(force_right_line, 'YData', force_buf_R);
-
+            set(force_sum_line,   'YData', force_buf_S);
             drawnow limitrate;
         end
 
@@ -433,11 +494,57 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         disp('MVC saved.');
 
         % Switch y-axis to MVC fraction (0–1)
-        ylim(ax_force, [-0.1, 1.3]);
+        %ylim(ax_force, [-0.1, 1.3]);
+        y_max = trap_level * 2;
+        ylim(ax_force, [-y_max * 0.1, y_max * 1.1]);
         ax_force.YLimMode = 'manual';
         ylabel(ax_force, 'Force (MVC fraction)');
 
         state = 'idle';
+    end
+
+    % =====================================================================
+    %% KEY: RECALIBRATE OFFSET
+    % =====================================================================
+    if strcmp(keyPressed, 'o')
+        guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
+        keyPressed = '';
+
+        fprintf('Recalibrating offsets — release force (%.1fs)...\n', offsettime);
+        title(ax_force, 'Recalibrating offset — release force...');
+        drawnow;
+
+        reoffset_n = round(offsettime * sampFreq);
+        rebuf_L = zeros(1, reoffset_n);
+        rebuf_R = zeros(1, reoffset_n);
+        rebuf_S = zeros(1, reoffset_n);
+        col = 1;
+
+        if dryrun
+            rebuf_L(:) = mean(force_buf_L) * mvc_value;  % approximate from display
+            rebuf_R(:) = mean(force_buf_R) * mvc_value;
+            rebuf_S(:) = rebuf_L + rebuf_R;
+        else
+            while col <= reoffset_n
+                while t.NumBytesAvailable < total_channels * block_samples * 2
+                    pause(0.001);
+                end
+                Temp = read(t, total_channels * block_samples, 'int16');
+                d    = reshape(Temp, total_channels, block_samples);
+                len  = min(block_samples, reoffset_n - col + 1);
+                rebuf_L(col:col+len-1) = d(force_left,  1:len);
+                rebuf_R(col:col+len-1) = d(force_right, 1:len);
+                rebuf_S(col:col+len-1) = d(force_sum,   1:len);
+                col = col + len;
+            end
+        end
+
+        force_offset_L = mean(rebuf_L);
+        force_offset_R = mean(rebuf_R);
+        force_offset   = mean(rebuf_S);
+        fprintf('New offsets — L: %.0f  R: %.0f  Sum: %.0f\n', ...
+            force_offset_L, force_offset_R, force_offset);
+        title(ax_force, 'Force — press M for MVC, T for task, O for offset, Q to quit');
     end
 
 
@@ -459,10 +566,16 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 drawnow;
                 pause(1);
             end
-            title(ax_force, 'Force — press M for MVC, T for task, Q to quit');
+            if ~dryrun
+                flush(t);
+            end
 
+            title(ax_force, 'Force — press M for MVC, T for task, Q to quit');
             state      = 'task';
             task_k     = 1;
+
+            set(tracker_ball, 'Visible', 'on');
+            set(force_sum_line, 'Visible', 'off');
 
             task_force  = zeros(3, n_target);
             task_emg    = zeros(n_emg, block_samples * n_target);
@@ -514,6 +627,9 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             disp('Task data saved.');
             set(target_line, 'YData', NaN(1, N_disp));
             state = 'idle';
+
+            set(tracker_ball, 'Visible', 'off');
+            set(force_sum_line, 'Visible', 'on');
         end
     end
     %pause(block_samples / sampFreq);   % slow dry-run to real-time
