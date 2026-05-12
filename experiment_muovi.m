@@ -5,7 +5,7 @@ function experiment_muovi(varargin)
 % parser
 
 % Default parameters
-mvc_mode     = 'bilateral';   % 'left' | 'right' | 'bilateral'
+mvc_mode     = 'right';   % 'left' | 'right' | 'bilateral'
 mvc_override = [];            % numeric MVC value
 
 trap_ramp_s = 2;
@@ -102,6 +102,10 @@ end
 zi_L = zeros(max(length(a_force), length(b_force)) - 1, 1);
 zi_R = zeros(max(length(a_force), length(b_force)) - 1, 1);
 zi_S = zeros(max(length(a_force), length(b_force)) - 1, 1);
+
+force_hist_L = zeros(1, 10);
+force_hist_R = zeros(1, 10);
+force_hist_S = zeros(1, 10);
 
 % =========================================================================
 %% COLLECT FORCE BASELINE OFFSET
@@ -235,6 +239,8 @@ ylim(ax_force, [-80000 80000]);
 ax_force.YLimMode = 'manual';
 xlim(ax_force, [1 N_disp]);
 
+set(ax_force, 'XMinorGrid', 'on', 'YMinorGrid', 'on');
+
 % =========================================================================
 %% FIGURE: EMG ACTIVITY
 % =========================================================================
@@ -340,17 +346,26 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % fS = filtfilt(b_force, a_force, double(data(force_sum,   :)));
 
     % Replace filtfilt lines in main loop with:
-    % [fL, zi_L] = filter(b_force, a_force, double(data(force_left,  :)), zi_L);
-    % [fR, zi_R] = filter(b_force, a_force, double(data(force_right, :)), zi_R);
-    % [fS, zi_S] = filter(b_force, a_force, double(data(force_sum,   :)), zi_S);
+    [fL, zi_L] = filter(b_force, a_force, double(data(force_left,  :)), zi_L);
+    [fR, zi_R] = filter(b_force, a_force, double(data(force_right, :)), zi_R);
+    [fS, zi_S] = filter(b_force, a_force, double(data(force_sum,   :)), zi_S);
 
-    fL = double(data(force_left,  :));
-    fR = double(data(force_right, :));
-    fS = double(data(force_sum,   :));
+    force_hist_L = [force_hist_L(2:end), (mean(fL) - force_offset_L)];
+    force_hist_R = [force_hist_R(2:end), -(mean(fR) - force_offset_R)];
+    force_hist_S = [force_hist_S(2:end), -(mean(fS) - force_offset)];
 
-    force_L = -(mean(fL) - force_offset_L);
-    force_R = -(mean(fR) - force_offset_R);
-    force_S = -(mean(fS) - force_offset);
+    force_L = mean(force_hist_L);
+    force_R = mean(force_hist_R);
+    force_S = mean(force_hist_S);
+
+    % fL = double(data(force_left,  :));
+    % fR = double(data(force_right, :));
+    % fS = double(data(force_sum,   :));
+
+    % THIS ONE
+    % force_L = -(mean(fL) - force_offset_L);
+    % force_R = -(mean(fR) - force_offset_R);
+    % force_S = -(mean(fS) - force_offset);
 
     % force_L = -(mean(double(data(force_left,  :))) - force_offset_L);
     % force_R = -(mean(double(data(force_right, :))) - force_offset_R);
@@ -365,6 +380,13 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         disp_L = force_L;
         disp_R = force_R;
         disp_S = force_S;
+    end
+
+    % Add this after disp_L/R/S are calculated:
+    switch mvc_mode
+        case 'left',      disp_track = disp_L;
+        case 'right',     disp_track = disp_R;
+        case 'bilateral', disp_track = disp_S;
     end
 
     %% EXTRACT EMG
@@ -386,7 +408,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
 
     if strcmp(state, 'task')
-        set(tracker_ball, 'XData', cursor_pos, 'YData', disp_S);
+        set(tracker_ball, 'XData', cursor_pos, 'YData', disp_track);
     end
 
     %% UPDATE EMG BARS
@@ -464,9 +486,21 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 f_R = -(mean(chunk_f) - force_offset_R);
                 f_S = f_L + f_R;
             else
-                f_L = -(mean(double(d_mvc(force_left,  :))) - force_offset_L);
-                f_R = -(mean(double(d_mvc(force_right, :))) - force_offset_R);
-                f_S = -(mean(double(d_mvc(force_sum,   :))) - force_offset);
+                [fL_mvc, zi_L] = filter(b_force, a_force, double(d_mvc(force_left,  :)), zi_L);
+                [fR_mvc, zi_R] = filter(b_force, a_force, double(d_mvc(force_right, :)), zi_R);
+                [fS_mvc, zi_S] = filter(b_force, a_force, double(d_mvc(force_sum,   :)), zi_S);
+
+                force_hist_L = [force_hist_L(2:end), (mean(fL_mvc) - force_offset_L)];
+                force_hist_R = [force_hist_R(2:end), -(mean(fR_mvc) - force_offset_R)];
+                force_hist_S = [force_hist_S(2:end), -(mean(fS_mvc) - force_offset)];
+
+                f_L = mean(force_hist_L);
+                f_R = mean(force_hist_R);
+                f_S = mean(force_hist_S);
+
+                % f_L = -(mean(double(d_mvc(force_left,  :))) - force_offset_L);
+                % f_R = -(mean(double(d_mvc(force_right, :))) - force_offset_R);
+                % f_S = -(mean(double(d_mvc(force_sum,   :))) - force_offset);
             end
 
             force_buf_L = [force_buf_L(2:end), f_L];
@@ -575,9 +609,14 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             task_k     = 1;
 
             set(tracker_ball, 'Visible', 'on');
+            switch mvc_mode
+                case 'left',      set(tracker_ball, 'MarkerFaceColor', 'r', 'MarkerEdgeColor', 'r');
+                case 'right',     set(tracker_ball, 'MarkerFaceColor', 'b', 'MarkerEdgeColor', 'b');
+                case 'bilateral', set(tracker_ball, 'MarkerFaceColor', 'k', 'MarkerEdgeColor', 'k');
+            end
             set(force_sum_line, 'Visible', 'off');
 
-            task_force  = zeros(3, n_target);
+            task_force  = zeros(4, n_target);
             task_emg    = zeros(n_emg, block_samples * n_target);
             task_target = target_display;
 
@@ -612,9 +651,10 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             set(target_line, 'YData', target_buf);
 
             % Store
-            task_force(1, task_k) = disp_L;
-            task_force(2, task_k) = disp_R;
-            task_force(3, task_k) = disp_S;
+            task_force(1, task_k) = disp_track;   % tracked channel (L, R, or bilateral)
+            task_force(2, task_k) = disp_L;
+            task_force(3, task_k) = disp_R;
+            task_force(4, task_k) = disp_S;
 
             col_start = (task_k-1)*block_samples + 1;
             task_emg(:, col_start:col_start+block_samples-1) = emg_block;
@@ -623,7 +663,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         else
             disp('Task complete. Saving...');
             save(fullfile(datapath, sprintf('task_%s.mat', datestr(now,'HHMMSS'))), ...
-                'task_force', 'task_emg', 'task_target', 'mvc_value');
+                'task_force', 'task_emg', 'task_target', 'mvc_value', 'mvc_mode');
             disp('Task data saved.');
             set(target_line, 'YData', NaN(1, N_disp));
             state = 'idle';

@@ -212,7 +212,7 @@ end
 
 %find_force_live(t, [141, 142, 144], total_channels, ["A", "B", "C"]);
 
-find_force_live(t, [141:144], total_channels);
+find_force_live(t, [145], total_channels);
 
 
 % =========================================================================

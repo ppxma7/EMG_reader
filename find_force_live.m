@@ -69,7 +69,7 @@ while ~strcmp(keyPressed, 'q')
     end
 
     xlim(ax, [1 buffer_length]);
-    ylim(ax, [-120000 120000]);
+    ylim(ax, [-1000000 1000000]);
     legend(ax, labels, 'Location','northwest');
     drawnow limitrate
 end
