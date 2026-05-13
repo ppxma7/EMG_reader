@@ -3,9 +3,11 @@
 function experiment_muovi(varargin)
 
 % parser
+close all
+clc
 
 % Default parameters
-mvc_mode     = 'right';   % 'left' | 'right' | 'bilateral'
+mvc_mode     = 'bilateral';   % 'left' | 'right' | 'bilateral'
 mvc_override = [];            % numeric MVC value
 
 trap_ramp_s = 2;
@@ -13,6 +15,8 @@ trap_hold_s = 10;
 trap_level  = 0.2;
 lead_in = 5;
 task_shape   = 'sombrero';    % 'trap' | 'sombrero'
+
+histLen = 20;
 
 % Parse name/value pairs
 for k = 1:2:numel(varargin)
@@ -36,7 +40,9 @@ end
 % =========================================================================
 %% LOAD SETUP
 % =========================================================================
-[fname, fpath] = uigetfile('*.mat', 'Select setup.mat');
+fpath = 'C:\Users\masgh\data\emgReaderData\';
+fname = 'setup.mat';
+%[fname, fpath] = uigetfile('*.mat', 'Select setup.mat');
 load(fullfile(fpath, fname));
 
 % =========================================================================
@@ -96,16 +102,16 @@ else
     disp('SyncStation connected and streaming.');
 end
 
-[b_force, a_force] = butter(4, 20/(sampFreq/2), 'low');
+[b_force, a_force] = butter(2, 50/(sampFreq/2), 'low');
 
 % Before main loop — initialise filter states
 zi_L = zeros(max(length(a_force), length(b_force)) - 1, 1);
 zi_R = zeros(max(length(a_force), length(b_force)) - 1, 1);
 zi_S = zeros(max(length(a_force), length(b_force)) - 1, 1);
 
-force_hist_L = zeros(1, 10);
-force_hist_R = zeros(1, 10);
-force_hist_S = zeros(1, 10);
+force_hist_L = zeros(1, histLen);
+force_hist_R = zeros(1, histLen);
+force_hist_S = zeros(1, histLen);
 
 % =========================================================================
 %% COLLECT FORCE BASELINE OFFSET
@@ -148,10 +154,11 @@ fprintf('Offsets — L: %.0f  R: %.0f  Sum: %.0f\n', force_offset_L, force_offse
 % =========================================================================
 %% MVC & TARGET — initialise
 % =========================================================================
-mvc_value  = 0;       % 0 until MVC done (avoids NaN division)
-mvc_force  = [];
-mvc_emg    = [];
-mvc_done   = false;
+mvc_value    = 0;
+mvc_best     = 0;      
+mvc_force    = [];
+mvc_emg      = [];
+mvc_done     = false;
 
 % If user supplied an MVC value, skip MVC acquisition
 if ~isempty(mvc_override)
@@ -256,6 +263,33 @@ ylabel(ax_emg, 'Std (a.u.)');
 ylim(ax_emg, emg_ylim_std);
 
 % =========================================================================
+%% FIGURE: SATURATION GAUGE
+% =========================================================================
+SAT_LIMIT = 32000;   % int16 max is 32767; flag at 32000 (98%)
+
+sat_fig = figure('Color','w','Position',[500 50 200 500],'Name','Saturation');
+ax_sat  = axes(sat_fig);
+hold(ax_sat,'on');
+
+% One vertical bar per force channel (L, R, Sum)
+sat_bars = bar(ax_sat, 1:3, [0;0;0], 'FaceColor','flat');
+sat_bars.CData = [0.2 0.6 1; 1 0.3 0.3; 0 0 0];  % blue, red, black
+
+% Saturation threshold lines
+yline(ax_sat,  SAT_LIMIT, 'r--', 'LineWidth', 1.5, 'Label', 'SAT+');
+yline(ax_sat, -SAT_LIMIT, 'r--', 'LineWidth', 1.5, 'Label', 'SAT-');
+
+ylim(ax_sat, [-32768, 32768]);
+ax_sat.YLimMode = 'manual';
+xticklabels(ax_sat, {'L','R','Sum'});
+title(ax_sat, 'Raw ADC (saturation monitor)');
+ylabel(ax_sat, 'int16 value');
+set(ax_sat, 'YGrid', 'on');
+
+% Colour the axes background red if saturated
+sat_saturated = false;
+
+% =========================================================================
 %% KEY HANDLER & STATE
 % =========================================================================
 % keyPressed = '';
@@ -346,13 +380,21 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % fS = filtfilt(b_force, a_force, double(data(force_sum,   :)));
 
     % Replace filtfilt lines in main loop with:
-    [fL, zi_L] = filter(b_force, a_force, double(data(force_left,  :)), zi_L);
-    [fR, zi_R] = filter(b_force, a_force, double(data(force_right, :)), zi_R);
-    [fS, zi_S] = filter(b_force, a_force, double(data(force_sum,   :)), zi_S);
+    % [fL, zi_L] = filter(b_force, a_force, double(data(force_left,  :)), zi_L);
+    % [fR, zi_R] = filter(b_force, a_force, double(data(force_right, :)), zi_R);
+    % [fS, zi_S] = filter(b_force, a_force, double(data(force_sum,   :)), zi_S);
 
-    force_hist_L = [force_hist_L(2:end), (mean(fL) - force_offset_L)];
-    force_hist_R = [force_hist_R(2:end), -(mean(fR) - force_offset_R)];
-    force_hist_S = [force_hist_S(2:end), -(mean(fS) - force_offset)];
+    raw_mean_L = mean(double(data(force_left,  :)));
+    raw_mean_R = mean(double(data(force_right, :)));
+    raw_mean_S = mean(double(data(force_sum,   :)));
+
+    force_hist_L = [force_hist_L(2:end), raw_mean_L - force_offset_L];
+    force_hist_R = [force_hist_R(2:end), raw_mean_R - force_offset_R];
+    force_hist_S = [force_hist_S(2:end), -(raw_mean_S - force_offset)];
+
+    % force_hist_L = [force_hist_L(2:end), (mean(fL) - force_offset_L)];
+    % force_hist_R = [force_hist_R(2:end), (mean(fR) - force_offset_R)];
+    % force_hist_S = [force_hist_S(2:end), -(mean(fS) - force_offset)];
 
     force_L = mean(force_hist_L);
     force_R = mean(force_hist_R);
@@ -370,6 +412,19 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % force_L = -(mean(double(data(force_left,  :))) - force_offset_L);
     % force_R = -(mean(double(data(force_right, :))) - force_offset_R);
     % force_S = -(mean(double(data(force_sum,   :))) - force_offset);
+
+    %% UPDATE SATURATION GAUGE
+    raw_L   = mean(double(data(force_left,  :)));
+    raw_R   = mean(double(data(force_right, :)));
+    raw_S   = -mean(double(data(force_sum,   :)));
+    set(sat_bars, 'YData', [raw_L; raw_R; raw_S]);
+
+    % Flash background red if any channel is saturated
+    is_sat = any(abs([raw_L raw_R raw_S]) >= SAT_LIMIT);
+    if is_sat ~= sat_saturated
+        sat_saturated = is_sat;
+        set(ax_sat, 'Color', repmat(~is_sat, 1, 3) + is_sat*[1 0.8 0.8]);
+    end
 
     %% NORMALISE IF MVC DONE
     if mvc_done
@@ -396,7 +451,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     force_buf_L = [force_buf_L(2:end), disp_L];
     force_buf_R = [force_buf_R(2:end), disp_R];
     % force_buf_S = [force_buf_S(2:end), disp_S];
-    % 
+    %
     set(force_left_line,  'YData', force_buf_L);
     set(force_right_line, 'YData', force_buf_R);
     % set(force_sum_line,   'YData', force_buf_S);
@@ -418,13 +473,25 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % =====================================================================
     %% KEY: MVC
     % =====================================================================
-    %% KEY: MVC
     if strcmp(keyPressed, 'm') && ~strcmp(state, 'mvc')
         guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
         keyPressed = '';
+
+        % Countdown
+        for ct = 3:-1:1
+            title(ax_force, sprintf('GET READY... %d', ct));
+            set(ax_force, 'Color', [1 1 0.8]);
+            drawnow;
+            pause(1);
+        end
+        title(ax_force, '*** PUSH NOW ***');
+        set(ax_force, 'Color', [1 0.85 0.85]);
+        drawnow;
+
         state      = 'mvc';
         mvc_value  = 0;
-        disp('MVC started — push as hard as possible...');
+        %disp('MVC started — push as hard as possible...')
+
 
         % Default offset for MVC — overridden by mvc_mode switch in hardware branch
         switch mvc_mode
@@ -438,13 +505,20 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         mvc_emg_raw   = zeros(n_emg, mvc_n);
         col = 1;
 
-        while col <= mvc_n
+        % Flush stale data accumulated during countdown
+        if ~dryrun
+            flush(t);
+        end
 
+        while col <= mvc_n
             %% READ BLOCK
             if dryrun
-                chunk_f = -8000 - 3000*rand(1, block_samples);   % fake force
-                chunk_e = randn(n_emg, block_samples) * 500;     % fake EMG
-                d_mvc   = [];
+                chunk_f = -8000 - 3000*rand(1, block_samples);
+                chunk_e = randn(n_emg, block_samples) * 500;
+                d_mvc   = zeros(total_channels, block_samples);
+                d_mvc(force_left,  :) = chunk_f;
+                d_mvc(force_right, :) = chunk_f;
+                d_mvc(force_sum,   :) = chunk_f;
             else
                 while t.NumBytesAvailable < total_channels * block_samples * 2
                     pause(0.001);
@@ -452,87 +526,141 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 Temp  = read(t, total_channels * block_samples, 'int16');
                 d_mvc = reshape(Temp, total_channels, block_samples);
 
-                % extract EMG + force
-                % Select force channel based on MVC mode
                 switch mvc_mode
-                    case 'left'
-                        chunk_f = double(d_mvc(force_left,:));
-                        %offset  = force_offset_L;
-
-                    case 'right'
-                        chunk_f = double(d_mvc(force_right,:));
-                        %offset  = force_offset_R;
-
-                    case 'bilateral'
-                        chunk_f = double(d_mvc(force_sum,:));
-                        %offset  = force_offset;
+                    case 'left',      chunk_f = double(d_mvc(force_left,:));
+                    case 'right',     chunk_f = double(d_mvc(force_right,:));
+                    case 'bilateral', chunk_f = double(d_mvc(force_sum,:));
                 end
-                %chunk_f = double(d_mvc(force_sum, :));
                 chunk_e = d_mvc(emg_channels, :);
             end
 
             %% STORE RAW MVC DATA
             idx_end = min(col + block_samples - 1, mvc_n);
             len     = idx_end - col + 1;
-
-            mvc_force_raw(col:idx_end)     = chunk_f(1:len);
-            mvc_emg_raw(:, col:idx_end)    = chunk_e(:, 1:len);
-
+            mvc_force_raw(col:idx_end)  = chunk_f(1:len);
+            mvc_emg_raw(:, col:idx_end) = chunk_e(:, 1:len);
             col = col + len;
 
-            %% UPDATE FORCE PLOT DURING MVC
-            if dryrun
-                f_L = -(mean(chunk_f) - force_offset_L);
-                f_R = -(mean(chunk_f) - force_offset_R);
-                f_S = f_L + f_R;
-            else
-                [fL_mvc, zi_L] = filter(b_force, a_force, double(d_mvc(force_left,  :)), zi_L);
-                [fR_mvc, zi_R] = filter(b_force, a_force, double(d_mvc(force_right, :)), zi_R);
-                [fS_mvc, zi_S] = filter(b_force, a_force, double(d_mvc(force_sum,   :)), zi_S);
+            %% UPDATE DISPLAY
+            raw_L =  mean(double(d_mvc(force_left,  :))) - force_offset_L;
+            raw_R =  mean(double(d_mvc(force_right, :))) - force_offset_R;
+            raw_S = -(mean(double(d_mvc(force_sum,  :))) - force_offset);
 
-                force_hist_L = [force_hist_L(2:end), (mean(fL_mvc) - force_offset_L)];
-                force_hist_R = [force_hist_R(2:end), -(mean(fR_mvc) - force_offset_R)];
-                force_hist_S = [force_hist_S(2:end), -(mean(fS_mvc) - force_offset)];
+            force_hist_L = [force_hist_L(2:end), raw_L];
+            force_hist_R = [force_hist_R(2:end), raw_R];
+            force_hist_S = [force_hist_S(2:end), raw_S];
 
-                f_L = mean(force_hist_L);
-                f_R = mean(force_hist_R);
-                f_S = mean(force_hist_S);
-
-                % f_L = -(mean(double(d_mvc(force_left,  :))) - force_offset_L);
-                % f_R = -(mean(double(d_mvc(force_right, :))) - force_offset_R);
-                % f_S = -(mean(double(d_mvc(force_sum,   :))) - force_offset);
-            end
-
-            force_buf_L = [force_buf_L(2:end), f_L];
-            force_buf_R = [force_buf_R(2:end), f_R];
-            force_buf_S = [force_buf_S(2:end), f_S];
+            force_buf_L = [force_buf_L(2:end), mean(force_hist_L)];
+            force_buf_R = [force_buf_R(2:end), mean(force_hist_R)];
+            force_buf_S = [force_buf_S(2:end), mean(force_hist_S)];
 
             set(force_left_line,  'YData', force_buf_L);
             set(force_right_line, 'YData', force_buf_R);
             set(force_sum_line,   'YData', force_buf_S);
+
+            set(sat_bars, 'YData', [mean(double(d_mvc(force_left,:))); ...
+                mean(double(d_mvc(force_right,:))); ...
+                mean(double(d_mvc(force_sum,:)))]);
             drawnow limitrate;
         end
 
         %% FINAL MVC VALUE
-        %mvc_value = max(-(mvc_force_raw - force_offset_L));
+
+        % mvc_value = max(-(mvc_force_raw - offset));
+        % mvc_force = mvc_force_raw;
+        % mvc_emg   = mvc_emg_raw;
+        % mvc_done  = true;
+        % 
+        % set(ax_force, 'Color', 'w');
+        % title(ax_force, sprintf('MVC = %.1f  |  M=MVC  T=task  Q=quit', mvc_value));
+        % 
+        % fprintf('MVC = %.1f\n', mvc_value);
+        % save(fullfile(datapath, 'mvc.mat'), 'mvc_value', 'mvc_force', 'mvc_emg');
+        % disp('MVC saved.');
+        % 
+        % y_max = trap_level * 2;
+        % ylim(ax_force, [-y_max * 0.5, y_max * 1.5]);
+        % ax_force.YLimMode = 'manual';
+        % ylabel(ax_force, 'Force (MVC fraction)');
 
         mvc_value = max(-(mvc_force_raw - offset));
-
-
         mvc_force = mvc_force_raw;
         mvc_emg   = mvc_emg_raw;
-        mvc_done  = true;
 
-        fprintf('MVC = %.1f\n', mvc_value);
-        save(fullfile(datapath, 'mvc.mat'), 'mvc_value', 'mvc_force', 'mvc_emg');
-        disp('MVC saved.');
+        % Plot MVC trace for review
+        mf = figure;
+        plot(mvc_force_raw, 'b', 'LineWidth', 1.5);
+        %yline(-(mvc_value + offset), 'r--', sprintf('Peak: %.0f', mvc_value));
+        plot([1 mvc_n], [-(mvc_value+offset) -(mvc_value+offset)], 'r--');
+        text(mvc_n*0.7, -(mvc_value+offset), sprintf('Peak: %.0f', mvc_value));
 
-        % Switch y-axis to MVC fraction (0–1)
-        %ylim(ax_force, [-0.1, 1.3]);
-        y_max = trap_level * 2;
-        ylim(ax_force, [-y_max * 0.1, y_max * 1.1]);
-        ax_force.YLimMode = 'manual';
-        ylabel(ax_force, 'Force (MVC fraction)');
+        title('MVC trace — review before accepting');
+        xlabel('Samples'); ylabel('Raw ADC');
+
+        keepLooping = true;
+        while keepLooping
+            choice = questdlg( ...
+                sprintf('New MVC = %.1f   Best so far = %.1f\nKeep this attempt?', mvc_value, mvc_best), ...
+                'MVC Confirmation', 'Yes', 'No', 'Select range', 'Yes');
+
+            switch choice
+                case 'Yes'
+                    keepLooping = false;
+                    if mvc_value > mvc_best
+                        mvc_best = mvc_value;
+                        fprintf('New best MVC = %.1f\n', mvc_best);
+                    else
+                        fprintf('MVC %.1f did not beat best (%.1f) — best kept\n', mvc_value, mvc_best);
+                    end
+                    mvc_done = true;
+
+                case 'No'
+                    keepLooping = false;
+                    disp('MVC attempt discarded.');
+                    mvc_done = (mvc_best > 0);
+                    mvc_value = mvc_best;   % reset to best (or 0 if none accepted)
+
+                case 'Select range'
+                    disp('Click two points on the figure to select range.');
+                    [x, ~] = ginput(2);
+                    new_start = max(1,          round(min(x)));
+                    new_end   = min(mvc_n, round(max(x)));
+                    fprintf('Range selected: [%d, %d]\n', new_start, new_end);
+                    mvc_value = max(-(mvc_force_raw(new_start:new_end) - offset));
+
+                    % Update plot
+                    hold on;
+                    xline(new_start, 'g--');
+                    xline(new_end,   'g--');
+                    plot([new_start new_end], [-(mvc_value+offset) -(mvc_value+offset)], 'g--');
+
+                    %yline(-(mvc_value + offset), 'g--', sprintf('Range peak: %.0f', mvc_value));
+                    hold off;
+            end
+        end
+        close(mf);
+        drawnow;
+        pause(0.1);
+        figure(force_fig);
+        drawnow;
+
+
+        % Always use best accepted value for normalisation
+        mvc_value = mvc_best;
+
+        set(ax_force, 'Color', 'w');
+        if mvc_done
+            title(ax_force, sprintf('Best MVC = %.1f  |  M=MVC  T=task  Q=quit', mvc_best));
+            y_max = trap_level * 2;
+            ylim(ax_force, [-y_max * 0.1, y_max * 1.1]);
+            ax_force.YLimMode = 'manual';
+            ylabel(ax_force, 'Force (MVC fraction)');
+            save(fullfile(datapath, 'mvc.mat'), 'mvc_best', 'mvc_force', 'mvc_emg');
+            fprintf('MVC saved. Best = %.1f\n', mvc_best);
+        else
+            title(ax_force, 'No MVC accepted yet  |  M=MVC  T=task  Q=quit');
+        end
+
 
         state = 'idle';
     end
