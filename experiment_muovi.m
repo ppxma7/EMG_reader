@@ -16,7 +16,11 @@ trap_level  = 0.2;
 lead_in = 5;
 task_shape   = 'sombrero';    % 'trap' | 'sombrero'
 
-histLen = 20;
+histLen = 10;
+                % 1 = no smoothing (single block mean)
+                % 2 = equivalent to display_with_previous  (Paul) 
+                % 10 = smooth, ~200ms lag at typical block sizes
+                % 20 = very smooth, more lag
 
 % Parse name/value pairs
 for k = 1:2:numel(varargin)
@@ -704,8 +708,16 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         force_offset_L = mean(rebuf_L);
         force_offset_R = mean(rebuf_R);
         force_offset   = mean(rebuf_S);
+
+        % Reset history to zero so stale pre-recalibration samples don't persist
+        force_hist_L = zeros(1, histLen);
+        force_hist_R = zeros(1, histLen);
+        force_hist_S = zeros(1, histLen);
+
+
         fprintf('New offsets — L: %.0f  R: %.0f  Sum: %.0f\n', ...
             force_offset_L, force_offset_R, force_offset);
+
         title(ax_force, 'Force — press M for MVC, T for task, O for offset, Q to quit');
     end
 
