@@ -16,7 +16,10 @@ trap_level  = 0.2;
 lead_in = 5;
 task_shape   = 'sombrero';    % 'trap' | 'sombrero'
 
-histLen = 10;
+% Scale raw int16 → mV  (SyncStation AUX: ±10V = ±32768 counts)
+aux_scale_mV = 10000 / 32768;   % 0.3052 mV/count
+
+histLen = 5;
                 % 1 = no smoothing (single block mean)
                 % 2 = equivalent to display_with_previous  (Paul) 
                 % 10 = smooth, ~200ms lag at typical block sizes
@@ -106,12 +109,12 @@ else
     disp('SyncStation connected and streaming.');
 end
 
-[b_force, a_force] = butter(2, 50/(sampFreq/2), 'low');
-
-% Before main loop — initialise filter states
-zi_L = zeros(max(length(a_force), length(b_force)) - 1, 1);
-zi_R = zeros(max(length(a_force), length(b_force)) - 1, 1);
-zi_S = zeros(max(length(a_force), length(b_force)) - 1, 1);
+% [b_force, a_force] = butter(2, 50/(sampFreq/2), 'low');
+% 
+% % Before main loop — initialise filter states
+% zi_L = zeros(max(length(a_force), length(b_force)) - 1, 1);
+% zi_R = zeros(max(length(a_force), length(b_force)) - 1, 1);
+% zi_S = zeros(max(length(a_force), length(b_force)) - 1, 1);
 
 force_hist_L = zeros(1, histLen);
 force_hist_R = zeros(1, histLen);
@@ -141,9 +144,9 @@ else
         Temp = read(t, total_channels * block_samples, 'int16');
         d    = reshape(Temp, total_channels, block_samples);
         len  = min(block_samples, offset_n - col + 1);
-        offset_buf_L(col:col+len-1) = d(force_left,  1:len);
-        offset_buf_R(col:col+len-1) = d(force_right, 1:len);
-        offset_buf_S(col:col+len-1) = d(force_sum,   1:len);
+        offset_buf_L(col:col+len-1) = double(d(force_left,  1:len)) * aux_scale_mV;
+        offset_buf_R(col:col+len-1) = double(d(force_right, 1:len)) * aux_scale_mV;
+        offset_buf_S(col:col+len-1) = double(d(force_sum,   1:len)) * aux_scale_mV;
         col = col + len;
     end
 end
@@ -245,9 +248,14 @@ tracker_ball = plot(ax_force, cursor_pos, 0, 'ko', ...
 legend(ax_force, {'Left','Right','Sum','Target'}, 'Location','northwest');
 title(ax_force, 'Force — press M for MVC, T for task, Q to quit');
 xlabel(ax_force, 'Updates');
-ylabel(ax_force, 'Force (raw units)');
-ylim(ax_force, [-80000 80000]);
-ax_force.YLimMode = 'manual';
+
+% ylabel(ax_force, 'Force (raw units)');
+% ylim(ax_force, [-80000 80000]);
+
+ylabel(ax_force, 'Force (mV)');
+%ylim(ax_force, [-500 500]);   % autoscale after first run; adjust to taste
+
+ax_force.YLimMode = 'auto';
 xlim(ax_force, [1 N_disp]);
 
 set(ax_force, 'XMinorGrid', 'on', 'YMinorGrid', 'on');
@@ -388,9 +396,9 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % [fR, zi_R] = filter(b_force, a_force, double(data(force_right, :)), zi_R);
     % [fS, zi_S] = filter(b_force, a_force, double(data(force_sum,   :)), zi_S);
 
-    raw_mean_L = mean(double(data(force_left,  :)));
-    raw_mean_R = mean(double(data(force_right, :)));
-    raw_mean_S = mean(double(data(force_sum,   :)));
+    raw_mean_L = mean(double(data(force_left,  :))) * aux_scale_mV;
+    raw_mean_R = mean(double(data(force_right, :))) * aux_scale_mV;
+    raw_mean_S = mean(double(data(force_sum,   :))) * aux_scale_mV;
 
     force_hist_L = [force_hist_L(2:end), raw_mean_L - force_offset_L];
     force_hist_R = [force_hist_R(2:end), raw_mean_R - force_offset_R];
@@ -531,9 +539,9 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 d_mvc = reshape(Temp, total_channels, block_samples);
 
                 switch mvc_mode
-                    case 'left',      chunk_f = double(d_mvc(force_left,:));
-                    case 'right',     chunk_f = double(d_mvc(force_right,:));
-                    case 'bilateral', chunk_f = double(d_mvc(force_sum,:));
+                    case 'left',      chunk_f = double(d_mvc(force_left,:))  * aux_scale_mV;
+                    case 'right',     chunk_f = double(d_mvc(force_right,:)) * aux_scale_mV;
+                    case 'bilateral', chunk_f = double(d_mvc(force_sum,:))   * aux_scale_mV;
                 end
                 chunk_e = d_mvc(emg_channels, :);
             end
@@ -546,9 +554,13 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             col = col + len;
 
             %% UPDATE DISPLAY
-            raw_L =  mean(double(d_mvc(force_left,  :))) - force_offset_L;
-            raw_R =  mean(double(d_mvc(force_right, :))) - force_offset_R;
-            raw_S = -(mean(double(d_mvc(force_sum,  :))) - force_offset);
+            % raw_L =  mean(double(d_mvc(force_left,  :))) - force_offset_L;
+            % raw_R =  mean(double(d_mvc(force_right, :))) - force_offset_R;
+            % raw_S = -(mean(double(d_mvc(force_sum,  :))) - force_offset);
+
+            raw_L =  (mean(double(d_mvc(force_left,  :))) * aux_scale_mV) - force_offset_L;
+            raw_R =  (mean(double(d_mvc(force_right, :))) * aux_scale_mV) - force_offset_R;
+            raw_S = -((mean(double(d_mvc(force_sum,  :))) * aux_scale_mV) - force_offset);
 
             force_hist_L = [force_hist_L(2:end), raw_L];
             force_hist_R = [force_hist_R(2:end), raw_R];
@@ -698,9 +710,11 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 Temp = read(t, total_channels * block_samples, 'int16');
                 d    = reshape(Temp, total_channels, block_samples);
                 len  = min(block_samples, reoffset_n - col + 1);
-                rebuf_L(col:col+len-1) = d(force_left,  1:len);
-                rebuf_R(col:col+len-1) = d(force_right, 1:len);
-                rebuf_S(col:col+len-1) = d(force_sum,   1:len);
+
+                rebuf_L(col:col+len-1) = double(d(force_left,  1:len)) * aux_scale_mV;
+                rebuf_R(col:col+len-1) = double(d(force_right, 1:len)) * aux_scale_mV;
+                rebuf_S(col:col+len-1) = double(d(force_sum,   1:len)) * aux_scale_mV;
+
                 col = col + len;
             end
         end

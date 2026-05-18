@@ -28,7 +28,7 @@ total_channels     = num_muovi * channels_per_muovi + channels_sync;
 % Force channels — absolute indices in full data matrix (from QA script)
 force_left  = 141;
 force_right = 142;
-force_sum   = 144;
+force_sum   = 143;
 
 % EMG channels — absolute indices for both Muovi+ devices
 emg_channels = [1:64, 71:134];   % 128 channels total
@@ -48,7 +48,8 @@ mvc_duration = 3;           % seconds
 % =========================================================================
 %% DISPLAY PARAMETERS
 % =========================================================================
-force_ylim  = [-30000 5000];   % pre-offset raw units (will rescale after offset)
+force_ylim  = [-300 50];       % mV units (±10V → ±10000 mV, typical force ~100s of mV)
+
 emg_offset  = 20000;        % vertical spacing between EMG channels (raw units)
 emg_ylim_std = [0 25000];      % for activity bar chart
 

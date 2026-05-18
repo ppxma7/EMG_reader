@@ -13,10 +13,10 @@ ax = axes;
 hold(ax,'on');
 title(ax,'Live AUX Channels (stacked)');
 xlabel(ax,'Samples');
-ylabel(ax,'Amplitude (offset per channel)');
+ylabel(ax,'Amplitude (mV, offset per channel)');
 
 num_aux = numel(aux_idx);
-offset  = 25000;
+offset  = 5000;   % mV offset between channels (10V range = 10000 mV total)
 
 lines = gobjects(num_aux, 1);
 for k = 1:num_aux
@@ -29,15 +29,13 @@ x = 1:buffer_length;
 
 % Low-pass filter
 Fs = 2000; 
-% fc = 50;
-% [b,a] = butter(4, fc/(Fs/2), 'low');
 
 set(gcf, 'KeyPressFcn', @(~,e) assignin('base','keyPressed', e.Key));
 keyPressed = '';
 
-block_size = 500;  % was 100
-fc = 20;             % was 50 — force barely changes faster than 2Hz
-[b,a] = butter(5, fc/(Fs/2), 'low');  % lower order too, avoid instability at low fc
+block_size = 500;
+fc = 20;             % Hz — adjust to match OTBioLab smoothness (try 10 if still noisy)
+[b,a] = butter(5, fc/(Fs/2), 'low');
 
 while ~strcmp(keyPressed, 'q')
 
@@ -49,6 +47,12 @@ while ~strcmp(keyPressed, 'q')
     data = reshape(Temp, total_channels, block_size);
 
     aux_data = double(data(aux_idx, :));
+
+    % Scale raw int16 counts to millivolts
+    % SyncStation AUX inputs: ±10 V range → int16 (±32768)
+    % 10000 mV / 32768 counts = 0.3052 mV/count
+    aux_scale_mV = 10000 / 32768;
+    aux_data = aux_data * aux_scale_mV;
 
     for k = 1:num_aux
         aux_data(k,:) = filtfilt(b, a, aux_data(k,:));
@@ -69,7 +73,7 @@ while ~strcmp(keyPressed, 'q')
     end
 
     xlim(ax, [1 buffer_length]);
-    ylim(ax, [-1000000 1000000]);
+    ylim(ax, [-5000 num_aux*offset + 5000]);
     legend(ax, labels, 'Location','northwest');
     drawnow limitrate
 end

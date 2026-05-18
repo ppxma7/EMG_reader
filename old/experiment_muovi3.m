@@ -1,0 +1,470 @@
+%% experimentMuoviDraft.m
+% Live force plot + EMG recording via SyncStation
+% Based on minimalReadTest — uint8 read, no extras
+
+close all; clear all; clc;
+
+force_dir = 'push';   % 'push' = pushing activates force, 'pull' = pulling activates
+
+task_shape  = 'sombrero';   % 'trap' | 'sombrero'
+task_level  = 0.2;          % target as fraction of MVC
+task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
+trap_ramp_s = 2;
+trap_hold_s = 10;
+lead_in_s   = 5;
+
+
+show_emg_traces = true;
+% =========================================================================
+% USER OPTIONS
+% =========================================================================
+TCPPort      = 54320;
+sampFreq     = 2000;
+blockSamples = 200;
+
+TotNumChan    = 146;
+TotNumByte    = 292;
+bytesPerBlock = TotNumByte * blockSamples;
+
+force_left  = 141;
+force_right = 142;
+force_sum   = 143;
+
+n_emg         = 128;          % 64 per Muovi+
+emg_channels  = [1:64, 71:134];
+datapath      = 'C:\Users\masgh\data\emgReaderData\';
+
+ConvFact = 0.000286;   % converts raw ADC to mV
+
+emg_ylim_std = [0 500];   % adjust to taste
+mvc_value = 0;
+
+% =========================================================================
+% CONFIG STRING
+% =========================================================================
+ConfString    = zeros(18,1);
+ConfString(1) = 2*2 + 1;
+ConfString(2) = (5-1)*16 + 1*8 + 0*2 + 1;
+ConfString(3) = (6-1)*16 + 1*8 + 0*2 + 1;
+ConfString(4) = CRC8(ConfString, 3);
+
+% =========================================================================
+% CONNECT
+% =========================================================================
+tcpSocket = tcpclient('192.168.76.1', TCPPort);
+tcpSocket.InputBufferSize = TotNumChan * sampFreq * 3;
+write(tcpSocket, ConfString(1:4), 'uint8');
+disp('Connected. Collecting baseline — keep force at rest...');
+
+% =========================================================================
+% BASELINE OFFSET (2 seconds)
+% =========================================================================
+baseline_samples = sampFreq * 2;
+baseline_buf = zeros(3, baseline_samples);
+col = 1;
+while col <= baseline_samples
+    while tcpSocket.BytesAvailable < bytesPerBlock, pause(0.001); end
+    D = readBlock(tcpSocket, TotNumByte, blockSamples);
+    len = min(blockSamples, baseline_samples - col + 1);
+    baseline_buf(1, col:col+len-1) = D(force_left,  1:len);
+    baseline_buf(2, col:col+len-1) = D(force_right, 1:len);
+    baseline_buf(3, col:col+len-1) = D(force_sum,   1:len);
+    col = col + len;
+end
+offset_L = mean(baseline_buf(1,:));
+offset_R = mean(baseline_buf(2,:));
+offset_S = mean(baseline_buf(3,:));
+fprintf('Offsets — L:%.0f  R:%.0f  Sum:%.0f\n', offset_L, offset_R, offset_S);
+
+% =========================================================================
+% FIGURES
+% =========================================================================
+N = round(10 * sampFreq / blockSamples);   % 10s rolling window
+buf_L = zeros(1,N);
+buf_R = zeros(1,N);
+buf_S = zeros(1,N);
+
+force_fig = figure('Color','w','Name','Force');
+ax = axes(force_fig); hold(ax,'on');
+hl = plot(ax, 1:N, buf_L, 'r', 'LineWidth',1.5);
+hr = plot(ax, 1:N, buf_R, 'b', 'LineWidth',1.5);
+hs = plot(ax, 1:N, buf_S, 'k', 'LineWidth',2);
+legend(ax,{'Left','Right','Sum'},'Location','northwest');
+title(ax,'Force — M=MVC  Q=quit');
+xlabel(ax,'Updates'); ylabel(ax,'Force (offset-corrected ADC)');
+ax.YLimMode = 'auto';
+xlim(ax,[1 N]);
+
+guidata(force_fig, struct('pressed',''));
+set(force_fig,'KeyPressFcn',@(src,e) guidata(src,setfield(guidata(src),'pressed',e.Key)));
+
+% FIGURE: EMG ACTIVITY
+% =========================================================================
+n_emg       = numel(emg_channels);
+emg_std_buf = zeros(n_emg, 1);
+
+emg_fig = figure('Color','w', 'Position',[50 50 400 600], 'Name','EMG activity');
+ax_emg  = axes(emg_fig);
+emg_bar = bar(ax_emg, 1:n_emg, emg_std_buf, 'FaceColor','flat');
+title(ax_emg, 'EMG channel activity (std)');
+xlabel(ax_emg, 'Channel');
+ylabel(ax_emg, 'Std (a.u.)');
+ylim(ax_emg, emg_ylim_std);
+
+
+if show_emg_traces
+    emg_offset = 200;   % ADC units between channels — adjust to taste
+    [emg_fig2, emg_lines, emg_buf] = setup_emg_figure(n_emg, blockSamples*2, emg_offset);
+end
+
+% =========================================================================
+% MAIN LOOP
+% =========================================================================
+disp('Running. Press M=MVC, Q=quit.');
+
+while ~strcmp(guidata(force_fig).pressed, 'q')
+
+    while tcpSocket.NumBytesAvailable < bytesPerBlock, pause(0.001); end
+    D = readBlock(tcpSocket, TotNumByte, blockSamples);
+
+    % Force
+    if strcmp(force_dir, 'push')
+        fL = -(mean(double(D(force_left, :))) - offset_L);
+        fR = -(mean(double(D(force_right,:))) - offset_R);
+    else  % pull
+        fL =  mean(double(D(force_left, :))) - offset_L;
+        fR =  mean(double(D(force_right,:))) - offset_R;
+    end
+    fS = -(mean(double(D(force_sum,  :))) - offset_S);
+
+    if mvc_value > 0
+        buf_L = [buf_L(2:end), fL/mvc_value];
+        buf_R = [buf_R(2:end), fR/mvc_value];
+        buf_S = [buf_S(2:end), fS/mvc_value];
+    else
+        buf_L = [buf_L(2:end), fL];
+        buf_R = [buf_R(2:end), fR];
+        buf_S = [buf_S(2:end), fS];
+    end
+
+    set(hl,'YData',buf_L);
+    set(hr,'YData',buf_R);
+    set(hs,'YData',buf_S);
+
+    % EMG display
+    emg_block   = double(D(emg_channels,:));
+    emg_std_buf = std(emg_block, 0, 2);
+    set(emg_bar, 'YData', emg_std_buf);
+
+    if show_emg_traces
+        for k = 1:n_emg
+            emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:))];
+            set(emg_lines(k), 'YData', emg_buf(k,:) + (k-1)*emg_offset);
+        end
+    end
+
+    % MVC
+    if strcmp(guidata(force_fig).pressed, 'm')
+        guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
+        mvc_duration = 5;
+
+        [mvc_value, mvc_emg, mvc_force_raw, buf_L, buf_R, buf_S] = run_MVC(tcpSocket, ax, hl, hr, hs, ...
+            buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
+            force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
+            force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact);
+
+        flush(tcpSocket);
+
+        if mvc_value > 0
+            buf_L = zeros(1,N);
+            buf_R = zeros(1,N);
+            buf_S = zeros(1,N);
+            set(hl,'YData',buf_L);
+            set(hr,'YData',buf_R);
+            set(hs,'YData',buf_S);
+            ylabel(ax, 'Force (MVC fraction)');
+            save(fullfile(datapath, sprintf('mvc_%s.mat', datestr(now,'yyyymmdd_HHMMSS'))), ...
+                'mvc_value', 'mvc_emg', 'mvc_force_raw', 'sampFreq', 'emg_channels');
+            disp('MVC saved.');
+        end
+    end
+
+
+    % TASK
+    if strcmp(guidata(force_fig).pressed, 't')
+        guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
+        if mvc_value == 0
+            disp('Run MVC first (press M).');
+        else
+            [task_force, task_emg] = run_task(tcpSocket, ax, hl, hr, hs, ...
+                buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
+                force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
+                force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, ...
+                trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg);
+            flush(tcpSocket);
+            if ~isempty(task_force)
+                save(fullfile(datapath, sprintf('task_%s.mat', datestr(now,'yyyymmdd_HHMMSS'))), ...
+                    'task_force','task_emg','sampFreq','emg_channels','mvc_value','task_leg','task_shape');
+                disp('Task saved.');
+            end
+        end
+    end
+
+
+    drawnow limitrate;
+
+end
+
+% =========================================================================
+% STOP
+% =========================================================================
+write(tcpSocket, [0; CRC8(0,1)], 'uint8');
+clear tcpSocket;
+close all;
+disp('Done.');
+
+%%% ---------------------------------------------
+%%% FUNCTIONS
+%%% ---------------------------------------------
+
+%% readBlock
+function data = readBlock(t, TotNumByte, blockSamples)
+Temp = fread(t, [TotNumByte, blockSamples], 'uint8');
+Temp = reshape(Temp, TotNumByte, blockSamples);
+D    = Temp(1:2:end,:)*256 + Temp(2:2:end,:);
+idx  = D >= 32768;
+D(idx) = D(idx) - 65536;
+data = D;
+end
+
+%% run_MVC
+function [mvc_value, mvc_emg, mvc_force_raw, buf_L, buf_R, buf_S] = run_MVC(tcpSocket, ax, hl, hr, hs, ...
+    buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
+    force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
+    force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact)
+
+for ct = 3:-1:1
+    title(ax, sprintf('GET READY... %d', ct));
+    drawnow; pause(1);
+end
+title(ax, '*** PUSH NOW ***'); drawnow;
+
+flush(tcpSocket);
+
+mvc_n         = mvc_duration * sampFreq;
+mvc_emg       = zeros(n_emg, mvc_n);
+mvc_force_raw = zeros(1, mvc_n);
+col           = 1;
+t_start       = tic;
+
+while col <= mvc_n
+    elapsed   = toc(t_start);
+    remaining = max(0, mvc_duration - elapsed);
+    title(ax, sprintf('PUSH! %d', ceil(remaining)));
+
+    while tcpSocket.BytesAvailable < bytesPerBlock, pause(0.001); end
+    D = readBlock(tcpSocket, TotNumByte, blockSamples);
+
+    if strcmp(force_dir,'push')
+        fL = -(mean(double(D(force_left, :))) - offset_L);
+        fR = -(mean(double(D(force_right,:))) - offset_R);
+    else
+        fL =  (mean(double(D(force_left, :))) - offset_L);
+        fR =  (mean(double(D(force_right,:))) - offset_R);
+    end
+    fS = -(mean(double(D(force_sum,:))) - offset_S);
+
+    buf_L = [buf_L(2:end), fL];
+    buf_R = [buf_R(2:end), fR];
+    buf_S = [buf_S(2:end), fS];
+    set(hl,'YData',buf_L);
+    set(hr,'YData',buf_R);
+    set(hs,'YData',buf_S);
+
+    idx_end = min(col+blockSamples-1, mvc_n);
+    len     = idx_end - col + 1;
+
+    if strcmp(force_dir,'push')
+        mvc_force_raw(col:idx_end) = -(double(D(force_sum, 1:len)) - offset_S);
+    else
+        mvc_force_raw(col:idx_end) =  (double(D(force_sum, 1:len)) - offset_S);
+    end
+
+    %mvc_emg(:, col:idx_end)     = double(D(emg_channels, 1:len));
+
+    mvc_emg(:, col:idx_end) = double(D(emg_channels, 1:len)) * ConvFact;
+
+    col = col + len;
+    drawnow limitrate;
+end
+
+title(ax, 'MVC complete — reviewing...');
+mvc_value = max(mvc_force_raw);
+
+mf = figure;
+plot(mvc_force_raw, 'b', 'LineWidth', 1.5); hold on;
+yline(mvc_value, 'r--', sprintf('Peak: %.0f', mvc_value));
+title(sprintf('MVC trace — Peak: %.0f', mvc_value));
+xlabel('Samples'); ylabel('Force (ADC)');
+
+choice = questdlg(sprintf('MVC = %.0f — accept?', mvc_value), ...
+    'MVC', 'Accept', 'Discard', 'Accept');
+close(mf);
+
+if isempty(choice) || strcmp(choice, 'Discard')
+    mvc_value = 0;
+    disp('MVC discarded.');
+else
+    fprintf('MVC accepted: %.0f\n', mvc_value);
+    title(ax,'Force — M=MVC  Q=quit');
+end
+
+end
+
+%% setup_emg_figure
+function [emg_fig2, emg_lines, emg_buf] = setup_emg_figure(n_emg, N, offset)
+emg_buf   = zeros(n_emg, N);
+emg_fig2 = figure('Color','w','Name','EMG traces','WindowStyle','normal');
+ax2       = axes(emg_fig2);
+hold(ax2,'on');
+emg_lines = gobjects(n_emg,1);
+for k = 1:n_emg
+    emg_lines(k) = plot(ax2, 1:N, emg_buf(k,:) + (k-1)*offset, 'Color',[0.3 0.3 0.3],'LineWidth',0.5);
+end
+xlim(ax2,[1 N]);
+title(ax2,'Live EMG traces');
+xlabel(ax2,'Samples'); ylabel(ax2,'Channel');
+ax2.YLimMode = 'auto';
+end
+
+%% run_task
+function [task_force, task_emg] = run_task(tcpSocket, ax, hl, hr, hs, ...
+    buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
+    force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
+    force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, ...
+    trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg)
+
+updates_per_sec = sampFreq / blockSamples;
+ramp_steps  = round(trap_ramp_s * updates_per_sec);
+hold_steps  = round(trap_hold_s * updates_per_sec);
+lead_steps  = round(lead_in_s   * updates_per_sec);
+
+switch task_shape
+    case 'trap'
+        target_trace = [zeros(1,lead_steps), ...
+            linspace(0,task_level,ramp_steps), ...
+            task_level*ones(1,hold_steps), ...
+            linspace(task_level,0,ramp_steps), ...
+            zeros(1,lead_steps)];
+    case 'sombrero'
+        brim_level = task_level * 0.4;
+        brim_steps = round(1.5 * updates_per_sec);
+        dip_steps  = round(1.0 * updates_per_sec);
+        target_trace = [zeros(1,lead_steps), ...
+            linspace(0,brim_level,ramp_steps), ...
+            brim_level*ones(1,brim_steps), ...
+            linspace(brim_level,task_level,dip_steps), ...
+            task_level*ones(1,hold_steps), ...
+            linspace(task_level,brim_level,dip_steps), ...
+            brim_level*ones(1,brim_steps), ...
+            linspace(brim_level,0,ramp_steps), ...
+            zeros(1,lead_steps)];
+end
+
+n_target   = numel(target_trace);
+n_samples  = n_target * blockSamples;
+task_force = zeros(4, n_samples);   % rows: L, R, S, target_interpolated
+task_emg   = zeros(n_emg, n_samples);
+
+% Countdown
+for ct = 3:-1:1
+    title(ax, sprintf('Starting in %d...', ct));
+    drawnow; pause(1);
+end
+flush(tcpSocket);
+
+% Tracker ball
+N = numel(buf_L);
+lookahead  = round(0.3 * N);
+cursor_pos = N - lookahead;
+
+tracker = plot(ax, cursor_pos, 0, 'ko', 'MarkerSize',16, 'MarkerFaceColor','k');
+switch task_leg
+    case 'left',      set(tracker,'MarkerFaceColor','r','MarkerEdgeColor','r');
+    case 'right',     set(tracker,'MarkerFaceColor','b','MarkerEdgeColor','b');
+    case 'bilateral', set(tracker,'MarkerFaceColor','k','MarkerEdgeColor','k');
+end
+
+target_line = plot(ax, 1:N, NaN(1,N), 'g', 'LineWidth', 5);
+
+col = 1;
+for k = 1:n_target
+
+    while tcpSocket.BytesAvailable < bytesPerBlock, pause(0.001); end
+    D = readBlock(tcpSocket, TotNumByte, blockSamples);
+
+    if strcmp(force_dir,'push')
+        fL = -(mean(double(D(force_left, :))) - offset_L);
+        fR = -(mean(double(D(force_right,:))) - offset_R);
+    else
+        fL =  (mean(double(D(force_left, :))) - offset_L);
+        fR =  (mean(double(D(force_right,:))) - offset_R);
+    end
+    fS = -(mean(double(D(force_sum,:))) - offset_S);
+
+    % normalise
+    dL = fL/mvc_value;
+    dR = fR/mvc_value;
+    dS = fS/mvc_value;
+    switch task_leg
+        case 'left',      disp_track = dL;
+        case 'right',     disp_track = dR;
+        case 'bilateral', disp_track = dS;
+    end
+
+    % scrolling force plot
+    buf_L = [buf_L(2:end), dL];
+    buf_R = [buf_R(2:end), dR];
+    buf_S = [buf_S(2:end), dS];
+    set(hl,'YData',buf_L);
+    set(hr,'YData',buf_R);
+    set(hs,'YData',buf_S);
+
+    % scrolling target
+    target_buf = NaN(1,N);
+    for x = 1:N
+        t_idx = k + (x - cursor_pos);
+        if t_idx >= 1 && t_idx <= n_target
+            target_buf(x) = target_trace(t_idx);
+        end
+    end
+    set(target_line,'YData',target_buf);
+    set(tracker,'XData',cursor_pos,'YData',disp_track);
+
+    % store
+    idx_end = min(col+blockSamples-1, n_samples);
+    len     = idx_end - col + 1;
+    if strcmp(force_dir,'push')
+        task_force(1, col:idx_end) = -(double(D(force_left, 1:len))  - offset_L);
+        task_force(2, col:idx_end) = -(double(D(force_right,1:len))  - offset_R);
+        task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
+    else
+        task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L);
+        task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R);
+        task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
+    end
+    task_force(4, col:idx_end) = target_trace(k);   % target value for this update
+    task_emg(:, col:idx_end)   = double(D(emg_channels,1:len)) * 0.000286;
+    col = col + len;
+
+    drawnow limitrate;
+end
+
+delete(tracker);
+delete(target_line);
+title(ax, 'Task complete.');
+task_force = task_force(:, 1:col-1);
+task_emg   = task_emg(:,   1:col-1);
+disp('Task complete.');
+
+end
