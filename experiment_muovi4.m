@@ -8,14 +8,15 @@ subject = 'sub01';   % set per participant
 
 force_dir = 'push'; % set this to push or pull
 
-preComputedMVC = 3.102;   % set to a value e.g. 9000 to skip MVC, [] to require MVC
+% in volts
+preComputedMVC = [];   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
 mvc_duration = 3;
 
 task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon'
-task_level  = 0.5;          % target as fraction of MVC
+task_level  = 0.3;          % target as fraction of MVC
 task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
-trap_ramp_s = 2;
+trap_ramp_s = 5;
 trap_hold_s = 10;
 lead_in_s   = 5;
 
@@ -174,12 +175,15 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     if strcmp(force_dir, 'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
         fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     else  % pull
         fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
         fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS =  (mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     end
+    
     %fS = -(mean(double(D(force_sum,  :))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
+    %fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
 
     if mvc_value > 0
         buf_L = [buf_L(2:end), fL/mvc_value];
@@ -232,7 +236,9 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         flush(tcpSocket);
 
 
-        fprintf('>>> MVC = %.0f <<<\n', mvc_value);
+        %fprintf('>>> MVC = %.0f <<<\n', mvc_value);
+        fprintf('>>> MVC = %.3f <<<\n', mvc_value);
+
 
         % append to log
 
@@ -401,12 +407,13 @@ while col <= mvc_n
     if strcmp(force_dir,'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
         fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     else
         fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
         fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS =  (mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     end
-    %fS = -(mean(double(D(force_sum,:))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
+
 
     buf_L = [buf_L(2:end), fL];
     buf_R = [buf_R(2:end), fR];
@@ -427,7 +434,7 @@ while col <= mvc_n
     if strcmp(force_dir,'push')
         mvc_force_raw(col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
         mvc_force_L(col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale;   % 
-        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R * force_scale);
+        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale;
     else
         mvc_force_raw(col:idx_end) =  (double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
         mvc_force_L(col:idx_end) = (double(D(force_left, 1:len))  - offset_L) * force_scale;   %  positive for pull
@@ -450,21 +457,29 @@ end
 
 title(ax, 'MVC complete');
 set(ax, 'Color', 'w');
+
+fprintf('mvc_force_raw range: %.4f to %.4f\n', min(mvc_force_raw), max(mvc_force_raw));
+fprintf('mvc_force_L range: %.4f to %.4f\n', min(mvc_force_L), max(mvc_force_L));
+fprintf('mvc_force_R range: %.4f to %.4f\n', min(mvc_force_R), max(mvc_force_R));
+
 mvc_value_L = max(mvc_force_L);
 mvc_value_R = max(mvc_force_R);
 mvc_value = max(mvc_force_raw);
-fprintf('MVC — L: %.0f  R: %.0f  Sum: %.0f\n', mvc_value_L, mvc_value_R, mvc_value);
 
 mf = figure;
 plot(mvc_force_raw, 'k', 'LineWidth', 1.5); hold on;
 plot(mvc_force_L, 'r', 'LineWidth', 1.5);
 plot(mvc_force_R, 'b', 'LineWidth', 1.5);
 
-yline(mvc_value, 'k--', sprintf('Peak: %.0f', mvc_value));
-yline(mvc_value_L, 'r--', sprintf('Peak: %.0f', mvc_value_L));
-yline(mvc_value_R, 'b--', sprintf('Peak: %.0f', mvc_value_R));
+fprintf('MVC — L: %.3f  R: %.3f  Sum: %.3f\n', mvc_value_L, mvc_value_R, mvc_value);
+yline(mvc_value,  'k--', sprintf('Peak: %.3f', mvc_value));
+yline(mvc_value_L,'r--', sprintf('Peak: %.3f', mvc_value_L));
+yline(mvc_value_R,'b--', sprintf('Peak: %.3f', mvc_value_R));
 
-title(sprintf('Peaks: %.0f %.0f %.0f', mvc_value, mvc_value_L, mvc_value_R));
+%title(sprintf('Peaks: %.0f %.0f %.0f', mvc_value, mvc_value_L, mvc_value_R));
+title(sprintf('Peaks: %.3f %.3f %.3f', mvc_value, mvc_value_L, mvc_value_R));
+
+
 xlabel('Samples'); ylabel('Force (ADC)');
 
 %%% REMOVE DIALOGUE BOX FOR NOW
@@ -632,13 +647,13 @@ for k = 1:n_target
     if strcmp(force_dir,'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
         fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     else
         fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
         fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS =  (mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     end
-    %fS = -(mean(double(D(force_sum,:))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
-
+   
     % normalise
     dL = fL/mvc_value;
     dR = fR/mvc_value;
