@@ -4,17 +4,13 @@
 
 close all; clear all; clc;
 
-subject = 'sub01';   % set per participant
-
 force_dir = 'push'; % set this to push or pull
 
-preComputedMVC = 9164;   % set to a value e.g. 9000 to skip MVC, [] to require MVC
+preComputedMVC = [];   % set to a value e.g. 9000 to skip MVC, [] to require MVC
 
-mvc_duration = 3;
-
-task_shape  = 'mcon';   % 'trap' | 'sombrero' | 'mcon'
+task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon'
 task_level  = 0.5;          % target as fraction of MVC
-task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
+task_leg    = 'right';  % 'left' | 'right' | 'bilateral'
 trap_ramp_s = 2;
 trap_hold_s = 10;
 lead_in_s   = 5;
@@ -212,7 +208,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
         else
 
-            
+            mvc_duration = 5;
           
             [mvc_value, mvc_value_L, mvc_value_R, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, buf_L, buf_R, buf_S, emg_buf] = run_MVC(tcpSocket, ax, hl, hr, hs, ...
                 buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
@@ -227,20 +223,13 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         fprintf('>>> MVC = %.0f <<<\n', mvc_value);
 
         % append to log
-
-        mvc_csv = fullfile(datapath, 'mvc_log.csv');
-        if ~isfile(mvc_csv)
-            fid = fopen(mvc_csv, 'w');
-            fprintf(fid, 'subject,datetime,MVC_Sum,MVC_L,MVC_R\n');
-            fclose(fid);
-        end
-        fid = fopen(mvc_csv, 'a');
-        fprintf(fid, '%s,%s,%.0f,%.0f,%.0f\n', subject, datestr(now,'yyyymmdd_HHMMSS'), mvc_value, mvc_value_L, mvc_value_R);
+        fid = fopen(fullfile(datapath, 'mvc_log.txt'), 'a');
+        % if strcmpi(task_leg, 'bilateral')
+        fprintf(fid, '%s  MVC_Sum = %.0f  MVC_L = %.0f  MVC_R = %.0f\n', datestr(now,'yyyymmdd_HHMMSS'), mvc_value, mvc_value_L, mvc_value_R);
+        % else
+        %     fprintf(fid, '%s  MVC = %.0f\n', datestr(now,'yyyymmdd_HHMMSS'), mvc_value);
+        % end
         fclose(fid);
-
-        % fid = fopen(fullfile(datapath, 'mvc_log.txt'), 'a');
-        % fprintf(fid, '%s  MVC_Sum = %.0f  MVC_L = %.0f  MVC_R = %.0f\n', datestr(now,'yyyymmdd_HHMMSS'), mvc_value, mvc_value_L, mvc_value_R);
-        % fclose(fid);
 
         if mvc_value > 0
             buf_L = zeros(1,N);
@@ -251,7 +240,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             set(hs,'YData',buf_S);
             ylabel(ax, 'Force (MVC fraction)');
             title(ax, 'Force — M=MVC  T=task  O=offset  Q=quit');
-            save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels,subject);
+            save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels);
 
             % % saving
             % SamplingFrequency = sampFreq;
@@ -282,7 +271,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             flush(tcpSocket);
 
             if ~isempty(task_force)
-                save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg, subject);
+                save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg);
 
                 % % saving
                 % SamplingFrequency = sampFreq;
@@ -452,11 +441,9 @@ plot(mvc_force_raw, 'k', 'LineWidth', 1.5); hold on;
 plot(mvc_force_L, 'r', 'LineWidth', 1.5);
 plot(mvc_force_R, 'b', 'LineWidth', 1.5);
 
-yline(mvc_value, 'k--', sprintf('Peak: %.0f', mvc_value));
-yline(mvc_value_L, 'r--', sprintf('Peak: %.0f', mvc_value_L));
-yline(mvc_value_R, 'b--', sprintf('Peak: %.0f', mvc_value_R));
 
-title(sprintf('Peaks: %.0f %.0f %.0f', mvc_value, mvc_value_L, mvc_value_R));
+yline(mvc_value, 'r--', sprintf('Peak: %.0f', mvc_value));
+title(sprintf('MVC trace — Peak: %.0f', mvc_value));
 xlabel('Samples'); ylabel('Force (ADC)');
 
 %%% REMOVE DIALOGUE BOX FOR NOW
@@ -754,7 +741,7 @@ disp('Task complete.');
 end
 
 %% save_task
-function save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg, subject)
+function save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg)
 
 signal.data          = task_emg;
 signal.fsamp         = sampFreq;
@@ -779,13 +766,13 @@ signal.target        = task_force(7,:);
 Force  = task_force;
 Target = task_force(7,:);
 
-save(fullfile(datapath, sprintf('task_%s_%s.mat', subject, datestr(now,'yyyymmdd_HHMMSS'))), ...
+save(fullfile(datapath, sprintf('task_%s.mat', datestr(now,'yyyymmdd_HHMMSS'))), ...
     'signal', 'mvc_value', 'task_leg', 'task_shape', 'Force', 'Target', '-v7.3');
 disp('Task saved.');
 end
 
 %% save_mvc
-function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels, subject)
+function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels)
 
 signal_mvc.data          = mvc_emg;
 signal_mvc.fsamp         = sampFreq;
@@ -804,8 +791,7 @@ signal_mvc.target        = [];
 % for forceGUI
 Force = mvc_force_raw;
 
-save(fullfile(datapath, sprintf('mvc_%s_%s.mat', subject, datestr(now,'yyyymmdd_HHMMSS'))), ...
+save(fullfile(datapath, sprintf('mvc_%s.mat', datestr(now,'yyyymmdd_HHMMSS'))), ...
     'signal_mvc', 'mvc_value', 'emg_channels', 'Force','-v7.3');
-    
 disp('MVC saved.');
 end
