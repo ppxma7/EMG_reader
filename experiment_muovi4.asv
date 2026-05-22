@@ -4,21 +4,34 @@
 
 close all; clear all; clc;
 
+subject = 'sub01';   % set per participant
+
 force_dir = 'push'; % set this to push or pull
 
-preComputedMVC = [];   % set to a value e.g. 9000 to skip MVC, [] to require MVC
+% in volts
+preComputedMVC = 1;   % set to a value e.g. 3 to skip MVC, [] to require MVC
+
+mvc_duration = 3;
 
 task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon'
-task_level  = 0.5;          % target as fraction of MVC
-task_leg    = 'right';  % 'left' | 'right' | 'bilateral'
-trap_ramp_s = 2;
+task_level  = 0.3;          % target as fraction of MVC
+task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
+trap_ramp_s = 5;
 trap_hold_s = 10;
 lead_in_s   = 5;
 
 mcon_cycles = 8;
 
-% guessing here - not used for now
-voltage_scale = 5000 / 32768;   % mV per count (±5V range assumed)
+% Force channels are 16-bit signed integers (-32768 to +32767 counts)
+% Hardware input range is ±2.5V (5V total span)
+% Scale factor converts raw counts back to volts: 5V / 2^16 counts
+% hardware measures a voltage (say -2.5V to +2.5V), 
+% converts it to a 16-bit signed integer (-32768 to +32767), 
+% and sends it over TCP as two bytes. 
+% readBlock reassembles those two bytes back into the integer, and 
+% force_scale converts that integer back to volts.
+force_scale = 5.0 / 65536;
+
 
 % true to see EMG signals
 show_emg_traces = false;
@@ -52,7 +65,7 @@ n_emg         = 128;          % 64 per Muovi+
 emg_channels  = [1:64, 71:134];
 datapath      = 'C:\Users\masgh\data\emgReaderData\';
 
-ConvFact = 0.000286;   % converts raw ADC to mV
+ConvFact = 0.000286;   % converts raw ADC to mV for EMG
 
 emg_ylim_std = [0 500];   % ignored - this for EMG activity std figure
 mvc_value = 0;
@@ -160,18 +173,21 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
     % Force
     if strcmp(force_dir, 'push')
-        fL = -(mean(double(D(force_left, :))) - offset_L);
-        fR = -(mean(double(D(force_right,:))) - offset_R);
+        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     else  % pull
-        fL =  mean(double(D(force_left, :))) - offset_L;
-        fR =  mean(double(D(force_right,:))) - offset_R;
+        fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS =  (mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     end
+    
     %fS = -(mean(double(D(force_sum,  :))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S);
+    %fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
 
     if mvc_value > 0
         buf_L = [buf_L(2:end), fL/mvc_value];
-        buf_R = [buf_R(2:end), fR/mvc_value];
+        buf_R = [buf_R(2:end), fR/mvc_value]; 
         buf_S = [buf_S(2:end), fS/mvc_value];
     else
         buf_L = [buf_L(2:end), fL];
@@ -195,7 +211,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         end
     end
 
-    % MVC
+    %% MVC
     if strcmp(guidata(force_fig).pressed, 'm')
         guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
 
@@ -208,28 +224,37 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
         else
 
-            mvc_duration = 5;
+            
           
             [mvc_value, mvc_value_L, mvc_value_R, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, buf_L, buf_R, buf_S, emg_buf] = run_MVC(tcpSocket, ax, hl, hr, hs, ...
                 buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
                 force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                 force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-                emg_lines, emg_buf, emg_offset, show_emg_traces);
+                emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale);
         end
 
         flush(tcpSocket);
 
 
-        fprintf('>>> MVC = %.0f <<<\n', mvc_value);
+        %fprintf('>>> MVC = %.0f <<<\n', mvc_value);
+        fprintf('>>> MVC = %.3f <<<\n', mvc_value);
+
 
         % append to log
-        fid = fopen(fullfile(datapath, 'mvc_log.txt'), 'a');
-        % if strcmpi(task_leg, 'bilateral')
-        fprintf(fid, '%s  MVC_Sum = %.0f  MVC_L = %.0f  MVC_R = %.0f\n', datestr(now,'yyyymmdd_HHMMSS'), mvc_value, mvc_value_L, mvc_value_R);
-        % else
-        %     fprintf(fid, '%s  MVC = %.0f\n', datestr(now,'yyyymmdd_HHMMSS'), mvc_value);
-        % end
+
+        mvc_csv = fullfile(datapath, 'mvc_log.csv');
+        if ~isfile(mvc_csv)
+            fid = fopen(mvc_csv, 'w');
+            fprintf(fid, 'subject,datetime,MVC_Sum,MVC_L,MVC_R\n');
+            fclose(fid);
+        end
+        fid = fopen(mvc_csv, 'a');
+        fprintf(fid, '%s,%s,%.0f,%.0f,%.0f\n', subject, datestr(now,'yyyymmdd_HHMMSS'), mvc_value, mvc_value_L, mvc_value_R);
         fclose(fid);
+
+        % fid = fopen(fullfile(datapath, 'mvc_log.txt'), 'a');
+        % fprintf(fid, '%s  MVC_Sum = %.0f  MVC_L = %.0f  MVC_R = %.0f\n', datestr(now,'yyyymmdd_HHMMSS'), mvc_value, mvc_value_L, mvc_value_R);
+        % fclose(fid);
 
         if mvc_value > 0
             buf_L = zeros(1,N);
@@ -240,7 +265,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             set(hs,'YData',buf_S);
             ylabel(ax, 'Force (MVC fraction)');
             title(ax, 'Force — M=MVC  T=task  O=offset  Q=quit');
-            save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels);
+            save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels,subject, force_dir, task_shape,task_level,task_leg);
 
             % % saving
             % SamplingFrequency = sampFreq;
@@ -254,7 +279,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     end
 
 
-    % TASK
+    %% TASK
     if strcmp(guidata(force_fig).pressed, 't')
         guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
         if mvc_value == 0
@@ -265,13 +290,13 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                 force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles, ...
                 trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-                emg_lines, emg_buf, emg_offset, show_emg_traces);
+                emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale);
 
 
             flush(tcpSocket);
 
             if ~isempty(task_force)
-                save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg);
+                save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg);
 
                 % % saving
                 % SamplingFrequency = sampFreq;
@@ -348,7 +373,7 @@ function [mvc_value, mvc_value_L, mvc_value_R, mvc_emg, mvc_force_raw,  mvc_forc
     buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-    emg_lines, emg_buf, emg_offset, show_emg_traces)
+    emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale)
 
 for ct = 3:-1:1
     title(ax, sprintf('GET READY... %d', ct));
@@ -380,14 +405,15 @@ while col <= mvc_n
     D = readBlock(tcpSocket, TotNumByte, blockSamples);
 
     if strcmp(force_dir,'push')
-        fL = -(mean(double(D(force_left, :))) - offset_L);
-        fR = -(mean(double(D(force_right,:))) - offset_R);
+        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     else
-        fL =  (mean(double(D(force_left, :))) - offset_L);
-        fR =  (mean(double(D(force_right,:))) - offset_R);
+        fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS =  (mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     end
-    %fS = -(mean(double(D(force_sum,:))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S);
+
 
     buf_L = [buf_L(2:end), fL];
     buf_R = [buf_R(2:end), fR];
@@ -406,13 +432,13 @@ while col <= mvc_n
     % end
 
     if strcmp(force_dir,'push')
-        mvc_force_raw(col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
-        mvc_force_L(col:idx_end) = -(double(D(force_left, 1:len))  - offset_L);   % 
-        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R);
+        mvc_force_raw(col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
+        mvc_force_L(col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale;   % 
+        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale;
     else
-        mvc_force_raw(col:idx_end) =  (double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
-        mvc_force_L(col:idx_end) = (double(D(force_left, 1:len))  - offset_L);   %  positive for pull
-        mvc_force_R(col:idx_end) = (double(D(force_right,1:len))  - offset_R);
+        mvc_force_raw(col:idx_end) =  (double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
+        mvc_force_L(col:idx_end) = (double(D(force_left, 1:len))  - offset_L) * force_scale;   %  positive for pull
+        mvc_force_R(col:idx_end) = (double(D(force_right,1:len))  - offset_R) * force_scale;
     end
 
     mvc_emg(:, col:idx_end) = double(D(emg_channels, 1:len)) * ConvFact;
@@ -431,19 +457,29 @@ end
 
 title(ax, 'MVC complete');
 set(ax, 'Color', 'w');
+
+fprintf('mvc_force_raw range: %.4f to %.4f\n', min(mvc_force_raw), max(mvc_force_raw));
+fprintf('mvc_force_L range: %.4f to %.4f\n', min(mvc_force_L), max(mvc_force_L));
+fprintf('mvc_force_R range: %.4f to %.4f\n', min(mvc_force_R), max(mvc_force_R));
+
 mvc_value_L = max(mvc_force_L);
 mvc_value_R = max(mvc_force_R);
 mvc_value = max(mvc_force_raw);
-fprintf('MVC — L: %.0f  R: %.0f  Sum: %.0f\n', mvc_value_L, mvc_value_R, mvc_value);
 
 mf = figure;
 plot(mvc_force_raw, 'k', 'LineWidth', 1.5); hold on;
 plot(mvc_force_L, 'r', 'LineWidth', 1.5);
 plot(mvc_force_R, 'b', 'LineWidth', 1.5);
 
+fprintf('MVC — L: %.3f  R: %.3f  Sum: %.3f\n', mvc_value_L, mvc_value_R, mvc_value);
+yline(mvc_value,  'k--', sprintf('Peak: %.3f', mvc_value));
+yline(mvc_value_L,'r--', sprintf('Peak: %.3f', mvc_value_L));
+yline(mvc_value_R,'b--', sprintf('Peak: %.3f', mvc_value_R));
 
-yline(mvc_value, 'r--', sprintf('Peak: %.0f', mvc_value));
-title(sprintf('MVC trace — Peak: %.0f', mvc_value));
+%title(sprintf('Peaks: %.0f %.0f %.0f', mvc_value, mvc_value_L, mvc_value_R));
+title(sprintf('Peaks: %.3f %.3f %.3f', mvc_value, mvc_value_L, mvc_value_R));
+
+
 xlabel('Samples'); ylabel('Force (ADC)');
 
 %%% REMOVE DIALOGUE BOX FOR NOW
@@ -484,7 +520,7 @@ function [task_force, task_emg, emg_buf] = run_task(tcpSocket, ax, hl, hr, hs, .
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles,...
     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-    emg_lines, emg_buf, emg_offset, show_emg_traces)
+    emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale)
 
 updates_per_sec = sampFreq / blockSamples;
 ramp_steps  = round(trap_ramp_s * updates_per_sec);
@@ -609,15 +645,15 @@ for k = 1:n_target
     D = readBlock(tcpSocket, TotNumByte, blockSamples);
 
     if strcmp(force_dir,'push')
-        fL = -(mean(double(D(force_left, :))) - offset_L);
-        fR = -(mean(double(D(force_right,:))) - offset_R);
+        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     else
-        fL =  (mean(double(D(force_left, :))) - offset_L);
-        fR =  (mean(double(D(force_right,:))) - offset_R);
+        fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
+        fS =  (mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
     end
-    %fS = -(mean(double(D(force_sum,:))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S);
-
+   
     % normalise
     dL = fL/mvc_value;
     dR = fR/mvc_value;
@@ -667,15 +703,15 @@ for k = 1:n_target
     idx_end = min(col+blockSamples-1, n_samples);
     len     = idx_end - col + 1;
     if strcmp(force_dir,'push')
-        task_force(1, col:idx_end) = -(double(D(force_left, 1:len))  - offset_L);
-        task_force(2, col:idx_end) = -(double(D(force_right,1:len))  - offset_R);
+        task_force(1, col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale;
+        task_force(2, col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale;
         %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
-        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
+        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
     else
-        task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L);
-        task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R);
+        task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L) * force_scale;
+        task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R) * force_scale;
         %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
-        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
+        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
     end
     task_force(4, col:idx_end) = task_force(1, col:idx_end) / mvc_value;
     task_force(5, col:idx_end) = task_force(2, col:idx_end) / mvc_value;
@@ -741,7 +777,7 @@ disp('Task complete.');
 end
 
 %% save_task
-function save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg)
+function save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg)
 
 signal.data          = task_emg;
 signal.fsamp         = sampFreq;
@@ -766,13 +802,17 @@ signal.target        = task_force(7,:);
 Force  = task_force;
 Target = task_force(7,:);
 
-save(fullfile(datapath, sprintf('task_%s.mat', datestr(now,'yyyymmdd_HHMMSS'))), ...
+% for filename 
+if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
+task_level_str = strrep(num2str(task_level),'.','p');
+
+save(fullfile(datapath, sprintf('%s_%s_%s_%s_%s_%s.mat',subject, task_shape, force_dir, task_leg(1:lenLeg),task_level_str, datestr(now,'yyyymmdd_HHMMSS'))),...
     'signal', 'mvc_value', 'task_leg', 'task_shape', 'Force', 'Target', '-v7.3');
 disp('Task saved.');
 end
 
 %% save_mvc
-function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels)
+function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels, subject, force_dir,task_leg)
 
 signal_mvc.data          = mvc_emg;
 signal_mvc.fsamp         = sampFreq;
@@ -791,7 +831,13 @@ signal_mvc.target        = [];
 % for forceGUI
 Force = mvc_force_raw;
 
-save(fullfile(datapath, sprintf('mvc_%s.mat', datestr(now,'yyyymmdd_HHMMSS'))), ...
+% for filename
+if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
+
+save(fullfile(datapath, sprintf('%s_%s_%s_%s_%s_%s.mat',subject, force_dir, task_leg(1:lenLeg),task_level_str, datestr(now,'yyyymmdd_HHMMSS'))),...
+
+save(fullfile(datapath, sprintf('mvc_%s_%s.mat', subject, datestr(now,'yyyymmdd_HHMMSS'))), ...
     'signal_mvc', 'mvc_value', 'emg_channels', 'Force','-v7.3');
+    
 disp('MVC saved.');
 end

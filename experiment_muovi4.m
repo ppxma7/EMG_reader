@@ -211,7 +211,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         end
     end
 
-    % MVC
+    %% MVC
     if strcmp(guidata(force_fig).pressed, 'm')
         guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
 
@@ -265,7 +265,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             set(hs,'YData',buf_S);
             ylabel(ax, 'Force (MVC fraction)');
             title(ax, 'Force — M=MVC  T=task  O=offset  Q=quit');
-            save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels,subject);
+            save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels,subject, force_dir,task_leg);
 
             % % saving
             % SamplingFrequency = sampFreq;
@@ -279,7 +279,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     end
 
 
-    % TASK
+    %% TASK
     if strcmp(guidata(force_fig).pressed, 't')
         guidata(force_fig, setfield(guidata(force_fig),'pressed',''));
         if mvc_value == 0
@@ -296,7 +296,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             flush(tcpSocket);
 
             if ~isempty(task_force)
-                save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg, subject);
+                save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg);
 
                 % % saving
                 % SamplingFrequency = sampFreq;
@@ -777,7 +777,7 @@ disp('Task complete.');
 end
 
 %% save_task
-function save_task(datapath, task_emg, task_force, mvc_value, task_leg, task_shape, sampFreq, n_emg, subject)
+function save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg)
 
 signal.data          = task_emg;
 signal.fsamp         = sampFreq;
@@ -802,13 +802,17 @@ signal.target        = task_force(7,:);
 Force  = task_force;
 Target = task_force(7,:);
 
-save(fullfile(datapath, sprintf('task_%s_%s.mat', subject, datestr(now,'yyyymmdd_HHMMSS'))), ...
+% for filename 
+if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
+task_level_str = strrep(num2str(task_level),'.','p');
+
+save(fullfile(datapath, sprintf('%s_%s_%s_%s_%s_%s.mat',subject, task_shape, force_dir, task_leg(1:lenLeg),task_level_str, datestr(now,'yyyymmdd_HHMMSS'))),...
     'signal', 'mvc_value', 'task_leg', 'task_shape', 'Force', 'Target', '-v7.3');
 disp('Task saved.');
 end
 
 %% save_mvc
-function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels, subject)
+function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels, subject, force_dir,task_leg)
 
 signal_mvc.data          = mvc_emg;
 signal_mvc.fsamp         = sampFreq;
@@ -827,7 +831,10 @@ signal_mvc.target        = [];
 % for forceGUI
 Force = mvc_force_raw;
 
-save(fullfile(datapath, sprintf('mvc_%s_%s.mat', subject, datestr(now,'yyyymmdd_HHMMSS'))), ...
+% for filename
+if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
+
+save(fullfile(datapath, sprintf('mvc_%s_%s_%s_%s.mat',subject, force_dir, task_leg(1:lenLeg), datestr(now,'yyyymmdd_HHMMSS'))),...
     'signal_mvc', 'mvc_value', 'emg_channels', 'Force','-v7.3');
     
 disp('MVC saved.');
