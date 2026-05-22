@@ -8,11 +8,11 @@ subject = 'sub01';   % set per participant
 
 force_dir = 'push'; % set this to push or pull
 
-preComputedMVC = 9164;   % set to a value e.g. 9000 to skip MVC, [] to require MVC
+preComputedMVC = 3.102;   % set to a value e.g. 9000 to skip MVC, [] to require MVC
 
 mvc_duration = 3;
 
-task_shape  = 'mcon';   % 'trap' | 'sombrero' | 'mcon'
+task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon'
 task_level  = 0.5;          % target as fraction of MVC
 task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
 trap_ramp_s = 2;
@@ -21,8 +21,16 @@ lead_in_s   = 5;
 
 mcon_cycles = 8;
 
-% guessing here - not used for now
-voltage_scale = 5000 / 32768;   % mV per count (±5V range assumed)
+% Force channels are 16-bit signed integers (-32768 to +32767 counts)
+% Hardware input range is ±2.5V (5V total span)
+% Scale factor converts raw counts back to volts: 5V / 2^16 counts
+% hardware measures a voltage (say -2.5V to +2.5V), 
+% converts it to a 16-bit signed integer (-32768 to +32767), 
+% and sends it over TCP as two bytes. 
+% readBlock reassembles those two bytes back into the integer, and 
+% force_scale converts that integer back to volts.
+force_scale = 5.0 / 65536;
+
 
 % true to see EMG signals
 show_emg_traces = false;
@@ -56,7 +64,7 @@ n_emg         = 128;          % 64 per Muovi+
 emg_channels  = [1:64, 71:134];
 datapath      = 'C:\Users\masgh\data\emgReaderData\';
 
-ConvFact = 0.000286;   % converts raw ADC to mV
+ConvFact = 0.000286;   % converts raw ADC to mV for EMG
 
 emg_ylim_std = [0 500];   % ignored - this for EMG activity std figure
 mvc_value = 0;
@@ -164,18 +172,18 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
     % Force
     if strcmp(force_dir, 'push')
-        fL = -(mean(double(D(force_left, :))) - offset_L);
-        fR = -(mean(double(D(force_right,:))) - offset_R);
+        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
     else  % pull
-        fL =  mean(double(D(force_left, :))) - offset_L;
-        fR =  mean(double(D(force_right,:))) - offset_R;
+        fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
     end
     %fS = -(mean(double(D(force_sum,  :))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S);
+    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
 
     if mvc_value > 0
         buf_L = [buf_L(2:end), fL/mvc_value];
-        buf_R = [buf_R(2:end), fR/mvc_value];
+        buf_R = [buf_R(2:end), fR/mvc_value]; 
         buf_S = [buf_S(2:end), fS/mvc_value];
     else
         buf_L = [buf_L(2:end), fL];
@@ -218,7 +226,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
                 force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                 force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-                emg_lines, emg_buf, emg_offset, show_emg_traces);
+                emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale);
         end
 
         flush(tcpSocket);
@@ -276,7 +284,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                 force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles, ...
                 trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-                emg_lines, emg_buf, emg_offset, show_emg_traces);
+                emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale);
 
 
             flush(tcpSocket);
@@ -359,7 +367,7 @@ function [mvc_value, mvc_value_L, mvc_value_R, mvc_emg, mvc_force_raw,  mvc_forc
     buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-    emg_lines, emg_buf, emg_offset, show_emg_traces)
+    emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale)
 
 for ct = 3:-1:1
     title(ax, sprintf('GET READY... %d', ct));
@@ -391,14 +399,14 @@ while col <= mvc_n
     D = readBlock(tcpSocket, TotNumByte, blockSamples);
 
     if strcmp(force_dir,'push')
-        fL = -(mean(double(D(force_left, :))) - offset_L);
-        fR = -(mean(double(D(force_right,:))) - offset_R);
+        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
     else
-        fL =  (mean(double(D(force_left, :))) - offset_L);
-        fR =  (mean(double(D(force_right,:))) - offset_R);
+        fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
     end
     %fS = -(mean(double(D(force_sum,:))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S);
+    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
 
     buf_L = [buf_L(2:end), fL];
     buf_R = [buf_R(2:end), fR];
@@ -417,13 +425,13 @@ while col <= mvc_n
     % end
 
     if strcmp(force_dir,'push')
-        mvc_force_raw(col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
-        mvc_force_L(col:idx_end) = -(double(D(force_left, 1:len))  - offset_L);   % 
-        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R);
+        mvc_force_raw(col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
+        mvc_force_L(col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale;   % 
+        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R * force_scale);
     else
-        mvc_force_raw(col:idx_end) =  (double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
-        mvc_force_L(col:idx_end) = (double(D(force_left, 1:len))  - offset_L);   %  positive for pull
-        mvc_force_R(col:idx_end) = (double(D(force_right,1:len))  - offset_R);
+        mvc_force_raw(col:idx_end) =  (double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
+        mvc_force_L(col:idx_end) = (double(D(force_left, 1:len))  - offset_L) * force_scale;   %  positive for pull
+        mvc_force_R(col:idx_end) = (double(D(force_right,1:len))  - offset_R) * force_scale;
     end
 
     mvc_emg(:, col:idx_end) = double(D(emg_channels, 1:len)) * ConvFact;
@@ -497,7 +505,7 @@ function [task_force, task_emg, emg_buf] = run_task(tcpSocket, ax, hl, hr, hs, .
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles,...
     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-    emg_lines, emg_buf, emg_offset, show_emg_traces)
+    emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale)
 
 updates_per_sec = sampFreq / blockSamples;
 ramp_steps  = round(trap_ramp_s * updates_per_sec);
@@ -622,14 +630,14 @@ for k = 1:n_target
     D = readBlock(tcpSocket, TotNumByte, blockSamples);
 
     if strcmp(force_dir,'push')
-        fL = -(mean(double(D(force_left, :))) - offset_L);
-        fR = -(mean(double(D(force_right,:))) - offset_R);
+        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale;
     else
-        fL =  (mean(double(D(force_left, :))) - offset_L);
-        fR =  (mean(double(D(force_right,:))) - offset_R);
+        fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale;
+        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale;
     end
     %fS = -(mean(double(D(force_sum,:))) - offset_S);
-    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S);
+    fS = -(mean(double(D(force_left,:) + D(force_right,:))) - offset_S) * force_scale;
 
     % normalise
     dL = fL/mvc_value;
@@ -680,15 +688,15 @@ for k = 1:n_target
     idx_end = min(col+blockSamples-1, n_samples);
     len     = idx_end - col + 1;
     if strcmp(force_dir,'push')
-        task_force(1, col:idx_end) = -(double(D(force_left, 1:len))  - offset_L);
-        task_force(2, col:idx_end) = -(double(D(force_right,1:len))  - offset_R);
+        task_force(1, col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale;
+        task_force(2, col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale;
         %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
-        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
+        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
     else
-        task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L);
-        task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R);
+        task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L) * force_scale;
+        task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R) * force_scale;
         %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
-        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S);
+        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
     end
     task_force(4, col:idx_end) = task_force(1, col:idx_end) / mvc_value;
     task_force(5, col:idx_end) = task_force(2, col:idx_end) / mvc_value;
