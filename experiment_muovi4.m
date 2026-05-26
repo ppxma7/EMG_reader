@@ -9,16 +9,17 @@ subject = 'sub01';   % set per participant
 force_dir = 'push'; % set this to push or pull
 
 % in volts
-preComputedMVC = [];   % set to a value e.g. 3 to skip MVC, [] to require MVC
+preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
 mvc_duration = 3;
 
-task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon'
+task_shape  = 'multi_trap';   % 'trap' | 'sombrero' | 'mcon' | 'mult_trap'
 task_level  = 0.3;          % target as fraction of MVC
-task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
+task_leg    = 'right';  % 'left' | 'right' | 'bilateral'
 trap_ramp_s = 5;
 trap_hold_s = 10;
 lead_in_s   = 5;
+multi_trap_rest_s = 2;   % rest between traps (multi_trap only)
 
 mcon_cycles = 8;
 
@@ -290,7 +291,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                 force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles, ...
                 trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-                emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale);
+                emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale, multi_trap_rest_s);
 
 
             flush(tcpSocket);
@@ -520,7 +521,9 @@ function [task_force, task_emg, emg_buf] = run_task(tcpSocket, ax, hl, hr, hs, .
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles,...
     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-    emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale)
+    emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale, multi_trap_rest_s)
+
+do_record = ~strcmp(task_shape, 'multi_trap');
 
 updates_per_sec = sampFreq / blockSamples;
 ramp_steps  = round(trap_ramp_s * updates_per_sec);
@@ -561,11 +564,25 @@ switch task_shape
             linspace(sine_wave(end), 0, ramp_steps), ...
             zeros(1,lead_steps)];
 
+    case 'multi_trap'
+        duration_min = 30;
+        rest_steps   = round(multi_trap_rest_s * updates_per_sec);
 
-        
+        total_steps  = round(duration_min * 60 * updates_per_sec);
 
+        single_trap = [linspace(0, task_level, ramp_steps), ...
+            task_level * ones(1, hold_steps), ...
+            linspace(task_level, 0, ramp_steps), ...
+            zeros(1, rest_steps)];
 
-        
+        n_reps = ceil(total_steps / numel(single_trap));
+        target_trace = [zeros(1, lead_steps), ...
+            repmat(single_trap, 1, n_reps)];
+        target_trace = target_trace(1 : lead_steps + total_steps);
+
+        % ---- no recording: return empties immediately after display ----
+        task_force = [];
+        task_emg   = [];
 
 end
 
@@ -700,54 +717,63 @@ for k = 1:n_target
     set(tracker,'XData',cursor_pos,'YData',disp_track);
 
     % store
-    idx_end = min(col+blockSamples-1, n_samples);
-    len     = idx_end - col + 1;
-    if strcmp(force_dir,'push')
-        task_force(1, col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale;
-        task_force(2, col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale;
-        %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
-        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
-    else
-        task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L) * force_scale;
-        task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R) * force_scale;
-        %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
-        task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
-    end
-    task_force(4, col:idx_end) = task_force(1, col:idx_end) / mvc_value;
-    task_force(5, col:idx_end) = task_force(2, col:idx_end) / mvc_value;
-    task_force(6, col:idx_end) = task_force(3, col:idx_end) / mvc_value;
+    if do_record
+        idx_end = min(col+blockSamples-1, n_samples);
+        len     = idx_end - col + 1;
+        if strcmp(force_dir,'push')
+            task_force(1, col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale;
+            task_force(2, col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale;
+            %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
+            task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
+        else
+            task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L) * force_scale;
+            task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R) * force_scale;
+            %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
+            task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
+        end
+        task_force(4, col:idx_end) = task_force(1, col:idx_end) / mvc_value;
+        task_force(5, col:idx_end) = task_force(2, col:idx_end) / mvc_value;
+        task_force(6, col:idx_end) = task_force(3, col:idx_end) / mvc_value;
 
 
-    if k < n_target
-        task_force(7, col:idx_end) = linspace(target_trace(k), target_trace(k+1), len);
-    else
-        task_force(7, col:idx_end) = target_trace(k);
-    end
+        if k < n_target
+            task_force(7, col:idx_end) = linspace(target_trace(k), target_trace(k+1), len);
+        else
+            task_force(7, col:idx_end) = target_trace(k);
+        end
 
 
-    %task_force(7, col:idx_end) = target_trace(k);
+        %task_force(7, col:idx_end) = target_trace(k);
 
-    %task_force(4, col:idx_end) = target_trace(k);   % target value for this update
-    task_emg(:, col:idx_end)   = double(D(emg_channels,1:len)) * ConvFact;
-    col = col + len;
+        %task_force(4, col:idx_end) = target_trace(k);   % target value for this update
+        task_emg(:, col:idx_end)   = double(D(emg_channels,1:len)) * ConvFact;
+        col = col + len;
 
 
-    % if show_emg_traces
-    %     for sh = 1:n_emg
-    %         emg_buf(sh,:) = [emg_buf(sh, blockSamples+1:end), double(D(emg_channels(sh),:))];
-    %         set(emg_lines(sh), 'YData', emg_buf(sh,:) + (sh-1)*emg_offset);
-    %     end
-    % end
+        % if show_emg_traces
+        %     for sh = 1:n_emg
+        %         emg_buf(sh,:) = [emg_buf(sh, blockSamples+1:end), double(D(emg_channels(sh),:))];
+        %         set(emg_lines(sh), 'YData', emg_buf(sh,:) + (sh-1)*emg_offset);
+        %     end
+        % end
 
-    emg_update_counter = emg_update_counter + 1;
-    if show_emg_traces && mod(emg_update_counter, emg_update_every) == 0
-        for sh = 1:n_emg
-            emg_buf(sh,:) = [emg_buf(sh, blockSamples+1:end), double(D(emg_channels(sh),:))];
-            set(emg_lines(sh), 'YData', emg_buf(sh,:) + (sh-1)*emg_offset);
+        emg_update_counter = emg_update_counter + 1;
+        if show_emg_traces && mod(emg_update_counter, emg_update_every) == 0
+            for sh = 1:n_emg
+                emg_buf(sh,:) = [emg_buf(sh, blockSamples+1:end), double(D(emg_channels(sh),:))];
+                set(emg_lines(sh), 'YData', emg_buf(sh,:) + (sh-1)*emg_offset);
+            end
         end
     end
 
+
     drawnow limitrate;
+    
+    % option to quit
+    if strcmp(task_shape, 'multi_trap') && strcmp(guidata(tracker).pressed, 'q')
+        break
+    end
+
     % fprintf('loop: %.1f ms\n', toc(t_loop)*1000);
 
     % % drain backlog accumulated during drawnow?
