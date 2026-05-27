@@ -155,7 +155,7 @@ end
 %% EMG 
 emg_lines   = [];
 emg_buf    = [];
-emg_offset = 200;
+emg_offset = 0.05;   % ~0.05 mV spacing between channels (200)
 
 if show_emg_traces
     [emg_fig2, emg_lines, emg_buf] = setup_emg_figure(n_emg, blockSamples*2, emg_offset);
@@ -207,7 +207,8 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
     if show_emg_traces
         for k = 1:n_emg
-            emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:))];
+            %emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:))];
+            emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:)) * ConvFact]; % should be in mV
             set(emg_lines(k), 'YData', emg_buf(k,:) + (k-1)*emg_offset);
         end
     end
@@ -448,7 +449,8 @@ while col <= mvc_n
 
     if show_emg_traces
         for k = 1:n_emg
-            emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:))];
+            %emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:))];
+            emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:)) * ConvFact]; % should be in mV
             set(emg_lines(k), 'YData', emg_buf(k,:) + (k-1)*emg_offset);
         end
     end
