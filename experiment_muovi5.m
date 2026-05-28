@@ -12,15 +12,15 @@ muscle   = 'GM';        % e.g. VL, TA, GM
 % in volts
 %preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
-mvcLeft      = 1.2;   % V — set per participant
-mvcRight     = 1.1;   % V — set per participant
+mvcLeft      = 1;   % V — set per participant
+mvcRight     = 1;   % V — set per participant
 
 
 mvc_duration = 3;
 
-task_shape  = 'multi_trap';   % 'trap' | 'sombrero' | 'mcon' | 'mult_trap'
-task_level  = 0.1;          % target as fraction of MVC
-task_leg    = 'right';  % 'left' | 'right' | 'bilateral'
+task_shape  = 'mcon';   % 'trap' | 'sombrero' | 'mcon' | 'mult_trap'
+task_level  = 0.25;          % target as fraction of MVC
+task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
 trap_ramp_s = 5;
 trap_hold_s = 10;
 lead_in_s   = 5;
@@ -47,7 +47,7 @@ force_scale = 5.0 / 65536;
 
 
 % true to see EMG signals
-show_emg_traces = true;
+show_emg_traces = false;
 % =========================================================================
 % USER OPTIONS
 % =========================================================================
@@ -120,7 +120,7 @@ end
 offset_L = mean(baseline_buf(1,:));
 offset_R = mean(baseline_buf(2,:));
 offset_S = mean(baseline_buf(3,:));
-fprintf('Offsets — L:%.0f  R:%.0f  Sum:%.0f\n', offset_L, offset_R, offset_S);
+fprintf('Offsets — L:%.3f  R:%.3f  Sum:%.3f\n', offset_L, offset_R, offset_S);
 
 % =========================================================================
 % FIGURES
@@ -150,7 +150,7 @@ set(force_fig,'KeyPressFcn',@(src,e) guidata(src,setfield(guidata(src),'pressed'
 if ~isempty(preComputedMVC)
     mvc_value = preComputedMVC;
     ylabel(ax, 'Force (MVC fraction)');
-    fprintf('Using precomputed MVC = %.0f\n', mvc_value);
+    fprintf('Using precomputed MVC = %.3f\n', mvc_value);
 end
 
 % FIGURE: EMG ACTIVITY
@@ -169,9 +169,11 @@ end
 emg_lines   = [];
 emg_buf    = [];
 emg_offset = 0.05;   % ~0.05 mV spacing between channels (200)
+emg_update_counter = 0;
+emg_update_every   = 8;   % update EMG ~5x/sec at blockSamples=50
 
 if show_emg_traces
-    [emg_fig2, emg_lines, emg_buf] = setup_emg_figure(n_emg, blockSamples*2, emg_offset);
+    [emg_fig2, emg_lines, emg_buf] = setup_emg_figure(n_emg, blockSamples*2, emg_offset, sampFreq, blockSamples);
 end
 
 %% MAIN LOOP
@@ -218,11 +220,19 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
     % emg_std_buf = std(emg_block, 0, 2);
     % set(emg_bar, 'YData', emg_std_buf);
 
-    if show_emg_traces
-        for k = 1:n_emg
-            %emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:))];
-            emg_buf(k,:) = [emg_buf(k, blockSamples+1:end), double(D(emg_channels(k),:)) * ConvFact]; % should be in mV
-            set(emg_lines(k), 'YData', emg_buf(k,:) + (k-1)*emg_offset);
+    if show_emg_traces && ishandle(emg_fig2)
+        emg_update_counter = emg_update_counter + 1;
+        blk_mv = double(D(emg_channels,:)) * ConvFact;
+        emg_buf = [emg_buf(:, blockSamples+1:end), blk_mv];
+
+        if mod(emg_update_counter, emg_update_every) == 0
+            qa = getappdata(emg_fig2, 'qa_axes');
+            for k = 1:64
+                set(emg_lines(k),    'YData', emg_buf(k,:));
+                set(emg_lines(k+64), 'YData', emg_buf(k+64,:));
+            end
+            mx = max(abs(emg_buf(:))); mx = max(mx, 0.05);
+            ylim(qa(1),[-mx mx]); ylim(qa(2),[-mx mx]);
         end
     end
 
@@ -352,7 +362,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
         offset_L = mean(baseline_buf(1,:));
         offset_R = mean(baseline_buf(2,:));
         offset_S = mean(baseline_buf(3,:));
-        fprintf('New offsets — L:%.0f  R:%.0f  Sum:%.0f\n', offset_L, offset_R, offset_S);
+        fprintf('New offsets — L:%.3f  R:%.3f  Sum:%.3f\n', offset_L, offset_R, offset_S);
         title(ax, 'Force — M=MVC  T=task  O=offset  Q=quit');
     end
 
@@ -518,19 +528,31 @@ xlabel('Samples'); ylabel('Force (ADC)');
 end
 
 %% setup_emg_figure
-function [emg_fig2, emg_lines, emg_buf] = setup_emg_figure(n_emg, N, offset)
-emg_buf   = zeros(n_emg, N);
-emg_fig2 = figure('Color','w','Name','EMG traces','WindowStyle','normal');
-ax2       = axes(emg_fig2);
-hold(ax2,'on');
-emg_lines = gobjects(n_emg,1);
-for k = 1:n_emg
-    emg_lines(k) = plot(ax2, 1:N, emg_buf(k,:) + (k-1)*offset, 'Color',[0.3 0.3 0.3],'LineWidth',0.5);
+function [emg_fig2, emg_lines, emg_buf] = setup_emg_figure(n_emg, N, offset, sampFreq, blockSamples)
+N_qa   = round(sampFreq * 3 / blockSamples) * blockSamples;
+t_qa   = (0:N_qa-1) * (1/sampFreq);
+emg_buf = zeros(n_emg, N_qa);
+
+emg_fig2 = figure('Color','k','Name','EMG traces','WindowStyle','normal',...
+    'Position',[100 100 1200 500]);
+ax(1) = subplot(1,2,1); hold(ax(1),'on');
+ax(2) = subplot(1,2,2); hold(ax(2),'on');
+for a = 1:2
+    set(ax(a),'Color','k','XColor','w','YColor','w');
+    xlabel(ax(a),'Time (s)','Color','w');
+    ylabel(ax(a),'mV','Color','w');
+    xlim(ax(a),[0 t_qa(end)]);
+    ylim(ax(a),[-0.5 0.5]);
 end
-xlim(ax2,[1 N]);
-title(ax2,'Live EMG traces');
-xlabel(ax2,'Samples'); ylabel(ax2,'Channel');
-ax2.YLimMode = 'auto';
+title(ax(1),'Muovi 1 (ch 1-64)',  'Color','w');
+title(ax(2),'Muovi 2 (ch 65-128)','Color','w');
+
+emg_lines = gobjects(n_emg,1);
+for k = 1:64
+    emg_lines(k)    = plot(ax(1), t_qa, zeros(1,N_qa), 'Color',[0.4 0.8 0.4],'LineWidth',0.3);
+    emg_lines(k+64) = plot(ax(2), t_qa, zeros(1,N_qa), 'Color',[0.4 0.8 0.4],'LineWidth',0.3);
+end
+setappdata(emg_fig2, 'qa_axes', ax);
 end
 
 %% run_task
@@ -542,6 +564,10 @@ function [task_force, task_emg, emg_buf] = run_task(tcpSocket, ax, hl, hr, hs, .
     emg_lines, emg_buf, emg_offset, show_emg_traces, force_scale, multi_trap_rest_s)
 
 do_record = ~strcmp(task_shape, 'multi_trap');
+
+% at top of run_task, add:
+draw_counter = 0;
+draw_every   = 2;   % render at ~20fps instead of 40fps
 
 updates_per_sec = sampFreq / blockSamples;
 ramp_steps  = round(trap_ramp_s * updates_per_sec);
@@ -666,18 +692,24 @@ switch task_leg
     case 'bilateral', set(trail_line, 'Color', 'k');
 end
 
+target_buf = NaN(1,N);
+x_idx      = 1:N;
+
 col = 1;
 for k = 1:n_target
 
     %t_loop = tic;
-    if tcpSocket.BytesAvailable > bytesPerBlock * 3
-        flush(tcpSocket);
-    end
+    % if tcpSocket.BytesAvailable > bytesPerBlock * 20
+    %     flush(tcpSocket);
+    % end
 
 
 
     while tcpSocket.BytesAvailable < bytesPerBlock, pause(0.001); end
     D = readBlock(tcpSocket, TotNumByte, blockSamples);
+    % drawnow takes slightly longer than one block (25ms), so 2-3 blocks accumulate while rendering
+    %  the backlog drains every cycle
+    %fprintf('backlog: %d blocks\n', floor(tcpSocket.BytesAvailable / bytesPerBlock));
 
     if strcmp(force_dir,'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale;
@@ -718,21 +750,31 @@ for k = 1:n_target
     % end
     
     % this is vectorised scrolling target:
-    x_idx      = 1:N;
-    t_idx      = k + (x_idx - cursor_pos);
-    valid      = t_idx >= 1 & t_idx <= n_target;
-    target_buf = NaN(1,N);
+    %x_idx      = 1:N;
+    %t_idx      = k + (x_idx - cursor_pos);
+    %valid      = t_idx >= 1 & t_idx <= n_target;
+    %target_buf = NaN(1,N);
+    %target_buf(valid) = target_trace(t_idx(valid));
+
+    % inside loop, replace the target_buf block:
+    t_idx = k + (x_idx - cursor_pos);
+    valid = t_idx >= 1 & t_idx <= n_target;
+    target_buf(:) = NaN;
     target_buf(valid) = target_trace(t_idx(valid));
 
 
     % history line
     trail_buf = [trail_buf(2:end), disp_track];
-    set(trail_line, 'XData', (cursor_pos - trail_len + 1):cursor_pos, ...
-        'YData', trail_buf);
+    % set(trail_line, 'XData', (cursor_pos - trail_len + 1):cursor_pos, ...
+    %     'YData', trail_buf);
+
+    set(trail_line, 'YData', trail_buf);
 
 
     set(target_line,'YData',target_buf);
-    set(tracker,'XData',cursor_pos,'YData',disp_track);
+    set(tracker, 'YData', disp_track);
+
+    %set(tracker,'XData',cursor_pos,'YData',disp_track);
 
     % store
     if do_record
@@ -782,10 +824,17 @@ for k = 1:n_target
                 set(emg_lines(sh), 'YData', emg_buf(sh,:) + (sh-1)*emg_offset);
             end
         end
+
+        
     end
 
 
-    drawnow limitrate;
+    %drawnow limitrate;
+
+    draw_counter = draw_counter + 1;
+    if mod(draw_counter, draw_every) == 0
+        drawnow limitrate;
+    end
     
     % option to quit
     if strcmp(task_shape, 'multi_trap') && strcmp(guidata(tracker).pressed, 'q')
@@ -847,7 +896,7 @@ Force  = task_force;
 Target = task_force(7,:);
 
 % for filename 
-% if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
+if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
 % task_level_str = strrep(num2str(task_level),'.','p');
 
 task_level_pct = round(task_level * 100);  % 0.1 → 10
