@@ -8,6 +8,8 @@ subject = 'sub01';   % set per participant
 force_dir = 'push'; % set this to push or pull
 study    = 'STUDY1';
 muscle   = 'GM';        % e.g. VL, TA, GM
+condition = 'testing'; % Could be PRE/POST/etc.
+% saving order: STUDY subject muscle task_leg task_shape task_level CONDITION
 
 % in volts
 %preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
@@ -292,7 +294,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 set(hs,'YData',buf_S);
                 ylabel(ax, 'Force (MVC fraction)');
                 title(ax, 'Force — M=MVC  T=task  O=offset  Q=quit');
-                save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels,subject, force_dir,task_leg);
+                save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels,subject, force_dir,task_leg,study, muscle, condition);
 
                 % % saving
                 % SamplingFrequency = sampFreq;
@@ -324,7 +326,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             flush(tcpSocket);
 
             if ~isempty(task_force)
-                save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg,study, muscle);
+                save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg,study, muscle, condition);
 
                 % % saving
                 % SamplingFrequency = sampFreq;
@@ -870,7 +872,7 @@ disp('Task complete.');
 end
 
 %% save_task
-function save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg, study, muscle)
+function save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg, study, muscle, condition)
 
 signal.data          = task_emg;
 signal.fsamp         = sampFreq;
@@ -896,13 +898,13 @@ Force  = task_force;
 Target = task_force(7,:);
 
 % for filename 
-if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
-% task_level_str = strrep(num2str(task_level),'.','p');
-
 task_level_pct = round(task_level * 100);  % 0.1 → 10
-fname = sprintf('%s_%s_%s_%s_%s_%s_%d_%s.mat', ...
-    study, subject, muscle, task_shape, force_dir, ...
-    task_leg(1:lenLeg), task_level_pct, datestr(now,'yyyymmdd_HHMMSS'));
+
+if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
+
+fname = sprintf('%s_%s_%s_%s_%s_%s_%d_%s_%s.mat', ...
+    study, subject, muscle, task_leg(1:lenLeg), task_shape, ...
+    force_dir, task_level_pct, condition, datestr(now,'yyyymmdd_HHMMSS'));
 
 save(fullfile(datapath, fname), 'signal', 'mvc_value', ...
     'task_leg', 'task_shape', 'Force', 'Target', '-v7.3');
@@ -917,7 +919,7 @@ disp('Task saved.');
 end
 
 %% save_mvc
-function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels, subject, force_dir,task_leg)
+function save_mvc(datapath, mvc_emg, mvc_force_raw, mvc_force_L, mvc_force_R, mvc_value, sampFreq, n_emg, emg_channels, subject, force_dir,task_leg,study, muscle, condition)
 
 signal_mvc.data          = mvc_emg;
 signal_mvc.fsamp         = sampFreq;
@@ -938,9 +940,15 @@ Force = mvc_force_raw;
 
 % for filename
 if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
+fname = sprintf('mvc_%s_%s_%s_%s_%s_%s_%s.mat', ...
+    study, subject, muscle, task_leg(1:lenLeg), ...
+    force_dir, condition, datestr(now,'yyyymmdd_HHMMSS'));
 
-save(fullfile(datapath, sprintf('mvc_%s_%s_%s_%s.mat',subject, force_dir, task_leg(1:lenLeg), datestr(now,'yyyymmdd_HHMMSS'))),...
-    'signal_mvc', 'mvc_value', 'emg_channels', 'Force','-v7.3');
+save(fullfile(datapath, fname), 'signal_mvc', 'mvc_value', ...
+    'task_leg', 'emg_channels', 'Force', '-v7.3');
+
+% save(fullfile(datapath, sprintf('mvc_%s_%s_%s_%s.mat',subject, force_dir, task_leg(1:lenLeg), datestr(now,'yyyymmdd_HHMMSS'))),...
+%     'signal_mvc', 'mvc_value', 'emg_channels', 'Force','-v7.3');
     
 disp('MVC saved.');
 end

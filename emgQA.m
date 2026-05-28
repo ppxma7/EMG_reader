@@ -105,9 +105,9 @@ h_img(2) = imagesc(ax_g(2), grid_data);
 
 for a = 1:2
     set(ax_g(a),'Color','k','XColor','w','YColor','w');
-    colormap(ax_g(a), 'hot');
+    colormap(ax_g(a), 'plasma');
     colorbar(ax_g(a));
-    clim(ax_g(a), [0 0.5]);   % mV RMS range — adjust as needed
+    clim(ax_g(a), [0 0.2]);   % mV RMS range — adjust as needed
     axis(ax_g(a), 'equal', 'tight');
     xlabel(ax_g(a),'Column','Color','w');
     ylabel(ax_g(a),'Row','Color','w');
