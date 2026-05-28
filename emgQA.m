@@ -75,6 +75,47 @@ end
 guidata(fig, struct('pressed',''));
 set(fig, 'KeyPressFcn', @(src,e) guidata(src, setfield(guidata(src),'pressed',e.Key)));
 
+% another figure
+% After the existing figure setup, add:
+grid_fig = figure('Color','k','Name','EMG Grid RMS','Position',[100 650 600 350]);
+ax_g(1) = subplot(1,2,1);
+ax_g(2) = subplot(1,2,2);
+
+% initialise with zeros
+
+ElChannelMap = [52 39 26 13 1; ...
+                53 40 27 14 1; ...
+                54 41 28 15 2; ...
+                55 42 29 16 3; ...
+                56 43 30 17 4; ...
+                57 44 31 18 5; ...
+                58 45 32 19 6; ...
+                59 46 33 20 7; ...
+                60 47 34 21 8; ...
+                61 48 35 22 9; ...
+                62 49 36 23 10; ...
+                63 50 37 24 11; ...
+                64 51 38 25 12];
+
+grid_data = zeros(13,5);
+
+
+h_img(1) = imagesc(ax_g(1), grid_data);
+h_img(2) = imagesc(ax_g(2), grid_data);
+
+for a = 1:2
+    set(ax_g(a),'Color','k','XColor','w','YColor','w');
+    colormap(ax_g(a), 'hot');
+    colorbar(ax_g(a));
+    clim(ax_g(a), [0 0.5]);   % mV RMS range — adjust as needed
+    axis(ax_g(a), 'equal', 'tight');
+    xlabel(ax_g(a),'Column','Color','w');
+    ylabel(ax_g(a),'Row','Color','w');
+end
+title(ax_g(1),'Muovi 1 RMS (mV)','Color','w');
+title(ax_g(2),'Muovi 2 RMS (mV)','Color','w');
+
+
 % =========================================================================
 % LIVE LOOP
 % =========================================================================
@@ -119,6 +160,22 @@ while ishandle(fig) && ~strcmp(guidata(fig).pressed, 'q')
     rms2 = mean(sqrt(mean(emg_buf(65:128,:).^2, 2)));
     title(ax(1), sprintf('Muovi 1 (ch 1-64)   | mean RMS = %.3f mV', rms1), 'Color','w');
     title(ax(2), sprintf('Muovi 2 (ch 65-128) | mean RMS = %.3f mV', rms2), 'Color','w');
+
+    % ← ADD HERE: grid heatmap
+    ch_rms = sqrt(mean(blk.^2, 2));   % 128×1 mV, current block only
+    grid1 = zeros(13,5);
+    grid2 = zeros(13,5);
+    for row = 1:13
+        for col = 1:5
+            ch = ElChannelMap(row,col);
+            if ch >= 1 && ch <= 64
+                grid1(row,col) = ch_rms(ch);
+                grid2(row,col) = ch_rms(ch+64);
+            end
+        end
+    end
+    set(h_img(1), 'CData', grid1);
+    set(h_img(2), 'CData', grid2);
 
     drawnow limitrate;
 end
