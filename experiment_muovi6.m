@@ -47,6 +47,8 @@ colours.bilateral   = 'w';           % bilateral force line + ball
 colours.waitingRoom = 'w';           % background of force trace before task
 colours.mvc         = [0.9882    0.5725    0.4471];
 
+ballSize = 32;
+
 % -------------------------------------------------------------------------
 % MULTI-TARGET CONFIG (only used when task_shape = 'multi_target')
 % Each entry defines one leg's target. Both must have the same total duration.
@@ -591,7 +593,7 @@ plot(ax_t, t_axis_upd, target_trace, 'Color',colours.target, 'LineWidth', 3);
 % user force line (fills in during trial)
 user_line   = plot(ax_t, t_axis_upd, NaN(1,n_steps), col_str, 'LineWidth', 2.5);
 
-ball = plot(ax_t, t_axis_upd(1), 0, 'o', 'MarkerSize', 14, 'LineStyle', 'none');
+ball = plot(ax_t, t_axis_upd(1), 0, 'o', 'MarkerSize', ballSize, 'LineStyle', 'none');
 
 set(ball, 'MarkerFaceColor',colours.(task_leg), 'MarkerEdgeColor',colours.(task_leg));
 
@@ -866,7 +868,7 @@ for i = 1:n_legs
     user_lines(i) = plot(ax_mt(i), t_axis_upd, NaN(1,n_steps), ...
         col_str, 'LineWidth', 2.5);
 
-    ball_lines(i) = plot(ax_mt(i), t_axis_upd(1), 0, 'o', 'MarkerSize', 14, 'LineStyle', 'none');
+    ball_lines(i) = plot(ax_mt(i), t_axis_upd(1), 0, 'o', 'MarkerSize', ballSize, 'LineStyle', 'none');
     switch cfg(i).leg
         case 'left',  set(ball_lines(i), 'MarkerFaceColor',colours.left,  'MarkerEdgeColor',colours.left);
         case 'right', set(ball_lines(i), 'MarkerFaceColor',colours.right, 'MarkerEdgeColor',colours.right);
