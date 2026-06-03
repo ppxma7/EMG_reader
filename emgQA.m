@@ -51,7 +51,7 @@ flush(tcpSocket);
 emg_buf = zeros(n_emg, N_display);
 
 fig = figure('Color','k', 'Name','EMG QA Viewer — Q to quit', ...
-    'MenuBar','none', 'ToolBar','none', 'Position',[50 50 1200 800]);
+    'MenuBar','none', 'ToolBar','none') ; %, 'Position',[50 50 1200 800]);
 
 ax(1) = subplot(1,2,1); hold(ax(1),'on');
 ax(2) = subplot(1,2,2); hold(ax(2),'on');
@@ -77,7 +77,7 @@ set(fig, 'KeyPressFcn', @(src,e) guidata(src, setfield(guidata(src),'pressed',e.
 
 % another figure
 % After the existing figure setup, add:
-grid_fig = figure('Color','k','Name','EMG Grid RMS','Position',[100 650 600 350]);
+grid_fig = figure('Color','k','Name','EMG Grid RMS'); % ,'Position',[100 650 600 350]);
 ax_g(1) = subplot(1,2,1);
 ax_g(2) = subplot(1,2,2);
 
@@ -115,6 +115,37 @@ end
 title(ax_g(1),'Muovi 1 RMS (mV)','Color','w');
 title(ax_g(2),'Muovi 2 RMS (mV)','Color','w');
 
+% another plot
+
+% =========================================================================
+% WATERFALL FIGURE
+% =========================================================================
+offset_mv = 0.3;   % mV between channels — increase if signals overlap
+% wf_fig = figure('Color','k', 'Name','EMG Waterfall — offset traces', ...
+%     'Position',[1300 50 800 900]);
+
+wf_fig = figure('Color','k', 'Name','EMG Waterfall — offset traces');
+
+ax_w(1) = subplot(1,2,1); hold(ax_w(1),'on');
+ax_w(2) = subplot(1,2,2); hold(ax_w(2),'on');
+for a = 1:2
+    set(ax_w(a), 'Color','k', 'XColor','w', 'YColor','w');
+    xlabel(ax_w(a), 'Time (s)', 'Color','w');
+    ylabel(ax_w(a), 'Channel', 'Color','w');
+    xlim(ax_w(a), [0, t_axis(end)]);
+end
+title(ax_w(1), 'Muovi 1 — offset traces', 'Color','w');
+title(ax_w(2), 'Muovi 2 — offset traces', 'Color','w');
+
+h_wf = gobjects(n_emg, 1);
+for k = 1:64
+    h_wf(k)    = plot(ax_w(1), t_axis, emg_buf(k,:)    + (k-1)*offset_mv, 'Color',[0.4 0.8 0.4], 'LineWidth', 0.3);
+    h_wf(k+64) = plot(ax_w(2), t_axis, emg_buf(k+64,:) + (k-1)*offset_mv, 'Color',[0.4 0.8 0.4], 'LineWidth', 0.3);
+end
+% y-tick labels = channel numbers
+yticks(ax_w(1), (0:8:63)*offset_mv); yticklabels(ax_w(1), string(1:8:64));
+yticks(ax_w(2), (0:8:63)*offset_mv); yticklabels(ax_w(2), string(65:8:128));
+
 
 % =========================================================================
 % LIVE LOOP
@@ -149,6 +180,12 @@ while ishandle(fig) && ~strcmp(guidata(fig).pressed, 'q')
         set(h_lines(k),    'YData', emg_buf(k,:));
         set(h_lines(k+64), 'YData', emg_buf(k+64,:));
     end
+    
+    % second plot
+    for k = 1:64
+        set(h_wf(k),    'YData', emg_buf(k,:)    + (k-1)*offset_mv);
+        set(h_wf(k+64), 'YData', emg_buf(k+64,:) + (k-1)*offset_mv);
+    end
 
     % autoscale both panels to same range
     mx = max(abs(emg_buf(:)));
@@ -176,6 +213,9 @@ while ishandle(fig) && ~strcmp(guidata(fig).pressed, 'q')
     end
     set(h_img(1), 'CData', grid1);
     set(h_img(2), 'CData', grid2);
+
+
+    
 
     drawnow limitrate;
 end
