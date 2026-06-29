@@ -37,6 +37,13 @@ switch task_leg
     case 'bilateral', preComputedMVC = mvcLeft + mvcRight;  
 end
 
+% fudge for saving
+if trap_hold_s == 0
+    task_shape_save = 'ramp';
+else
+    task_shape_save = task_shape;
+end
+
 % Force channels are 16-bit signed integers (-32768 to +32767 counts)
 % Hardware input range is ±2.5V (5V total span)
 % Scale factor converts raw counts back to volts: 5V / 2^16 counts
@@ -329,7 +336,8 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             flush(tcpSocket);
 
             if ~isempty(task_force)
-                save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg,study, muscle, condition);
+                %save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg,study, muscle, condition);
+                save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape_save,task_level,task_leg,study, muscle, condition);
 
                 % % saving
                 % SamplingFrequency = sampFreq;
@@ -604,7 +612,7 @@ switch task_shape
         % shift by pi/2 so sine starts at peak (zero slope) and ends at trough going up...
         % use -(2n-1) half cycles from pi/2:
         t_hold    = linspace(pi/2, pi/2 + (2*mcon_cycles)*pi, hold_steps);
-        sine_wave = task_level + (task_level * 0.3 * sin(t_hold));
+        sine_wave = task_level + (task_level * 0.15 * sin(t_hold));
         % sine_wave(1) = task_level + 0.3*task_level*sin(pi/2) = task_level*1.3
         % so ramp goes to task_level*1.3
         target_trace = [zeros(1,lead_steps), ...
