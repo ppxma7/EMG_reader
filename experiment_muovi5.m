@@ -670,7 +670,7 @@ ax.YLimMode = 'manual';
 
 % Tracker ball
 N = numel(buf_L);
-lookahead  = round(0.3 * N);
+lookahead  = round(0.5 * N);
 cursor_pos = N - lookahead;
 
 % show target
