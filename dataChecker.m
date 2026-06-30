@@ -7,8 +7,9 @@ clear all
 clc
 
 %% load
-file = uigetfile();
-load(file);
+[file, path] = uigetfile();
+fullpath = fullfile(path, file);
+load(fullpath);
 
 %% Force + Target
 t = (0:length(Force)-1)/signal.fsamp;
@@ -17,9 +18,9 @@ figure
 plot(t,Force(1,:),'-r'); hold on
 plot(t,Force(2,:),'-b')
 plot(t,Force(3,:),'-k')
-plot(t,Force(4,:),'--r')
-plot(t,Force(5,:),'--b')
-plot(t,Force(6,:),'--k')
+plot(t,Force(4,:),'--','Color','#de2d26')
+plot(t,Force(5,:),'--','Color','#3182bd')
+plot(t,Force(6,:),'--','Color','#31a354')
 plot(t,Force(7,:),'-m')
 legend(signal.auxiliaryname, 'Interpreter', 'none')
 title('Force channels'); xlabel('Time (s)'); ylabel('Volts')

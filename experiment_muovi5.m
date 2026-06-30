@@ -5,26 +5,26 @@
 close all; clear all; clc;
 
 subject = 'sub01';   % set per participant
-force_dir = 'push'; % set this to push or pull
+force_dir = 'pull'; % set this to push or pull
 study    = 'STUDY1';
-muscle   = 'GM';        % e.g. VL, TA, GM
+muscle   = 'TA';        % e.g. VL, TA, GM
 condition = 'testing'; % Could be PRE/POST/etc.
 % saving order: STUDY subject muscle task_leg task_shape task_level CONDITION
 
 % in volts
 %preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
-mvcLeft      = 1;   % V — set per participant
-mvcRight     = 1;   % V — set per participant
+mvcLeft      = [];   % V — set per participant
+mvcRight     = [];   % V — set per participant
 
 
 mvc_duration = 3;
 
-task_shape  = 'mcon';   % 'trap' | 'sombrero' | 'mcon' | 'mult_trap'
-task_level  = 0.25;          % target as fraction of MVC
+task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon' | 'mult_trap'
+task_level  = 0.1;          % target as fraction of MVC
 task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral'
 trap_ramp_s = 5;
-trap_hold_s = 25;
+trap_hold_s = 30;
 lead_in_s   = 5;
 multi_trap_rest_s = 2;   % rest between traps (multi_trap only)
 
@@ -85,8 +85,8 @@ force_sum   = 143;
 
 n_emg         = 128;          % 64 per Muovi+
 emg_channels  = [1:64, 71:134];
-datapath      = 'C:\Users\masgh\data\emgReaderData\';
-% datapath = 'D:\OneDrive - The University of Nottingham\Mathew Piasecki (staff)''s files - ePhys Lab\Michael\';
+%datapath      = 'C:\Users\masgh\data\emgReaderData\';
+datapath = 'D:\OneDrive - The University of Nottingham\Mathew Piasecki (staff)''s files - ePhys Lab\Michael\';
 
 ConvFact = 0.000286;   % converts raw ADC to mV for EMG
 
@@ -806,7 +806,7 @@ for k = 1:n_target
             task_force(1, col:idx_end) =  (double(D(force_left, 1:len))  - offset_L) * force_scale;
             task_force(2, col:idx_end) =  (double(D(force_right,1:len))  - offset_R) * force_scale;
             %task_force(3, col:idx_end) = -(double(D(force_sum,  1:len))  - offset_S);
-            task_force(3, col:idx_end) = -(double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
+            task_force(3, col:idx_end) = (double(D(force_left,1:len) + D(force_right,1:len)) - offset_S) * force_scale;
         end
         task_force(4, col:idx_end) = task_force(1, col:idx_end) / mvc_value;
         task_force(5, col:idx_end) = task_force(2, col:idx_end) / mvc_value;

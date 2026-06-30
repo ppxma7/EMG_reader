@@ -5,23 +5,23 @@
 close all; clear all; clc;
 
 subject = 'sub01';   % set per participant
-force_dir = 'push'; % set this to push or pull
+force_dir = 'pull'; % set this to push or pull
 study    = 'STUDY1';
-muscle   = 'GM';        % e.g. VL, TA, GM
+muscle   = 'TA';        % e.g. VL, TA, GM
 condition = 'testing'; % Could be PRE/POST/etc.
 % saving order: STUDY subject muscle task_leg task_shape task_level CONDITION
 
 % in volts
 %preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
-mvcLeft      = [];   % V — set per participant
-mvcRight     = [];   % V — set per participant
+mvcLeft      = 1;   % V — set per participant
+mvcRight     = 1;   % V — set per participant
 
 
 mvc_duration = 3;
 
-task_shape  = 'multi_target';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target'
-task_level  = 0.25;          % target as fraction of MVC (ignored for multi_target)
+task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target'
+task_level  = 0.1;          % target as fraction of MVC (ignored for multi_target)
 task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
 trap_ramp_s = 5;
 trap_hold_s = 30;
@@ -47,7 +47,7 @@ colours.bilateral   = 'w';           % bilateral force line + ball
 colours.waitingRoom = 'w';           % background of force trace before task
 colours.mvc         = [0.9882    0.5725    0.4471];
 
-colours.ballSize = 32;
+colours.ballSize = 16;
 
 % -------------------------------------------------------------------------
 % MULTI-TARGET CONFIG (only used when task_shape = 'multi_target')
@@ -115,7 +115,7 @@ force_sum   = 143;
 n_emg         = 128;          % 64 per Muovi+
 emg_channels  = [1:64, 71:134];
 datapath      = 'C:\Users\masgh\data\emgReaderData\';
-% datapath = 'D:\OneDrive - The University of Nottingham\Mathew Piasecki (staff)''s files - ePhys Lab\Michael\';
+%datapath = 'D:\OneDrive - The University of Nottingham\Mathew Piasecki (staff)''s files - ePhys Lab\Michael\';
 
 ConvFact = 0.000286;   % converts raw ADC to mV for EMG
 
@@ -599,17 +599,12 @@ set(ax_t, 'Color',colours.bg, 'XColor',colours.text, 'YColor',colours.text, ...
 plot(ax_t, t_axis_upd, target_trace, 'Color',colours.target, 'LineWidth', 3);
 
 % user force line (fills in during trial)
-user_line   = plot(ax_t, t_axis_upd, NaN(1,n_steps), col_str, 'LineWidth', 2.5);
+user_line   = plot(ax_t, t_axis_upd, NaN(1,n_steps), col_str, 'LineWidth', 1);
 
 ball = plot(ax_t, t_axis_upd(1), 0, 'o', 'MarkerSize', colours.ballSize, 'LineStyle', 'none');
 
-set(ball, 'MarkerFaceColor',colours.(task_leg), 'MarkerEdgeColor',colours.(task_leg));
-
-% switch task_leg
-%     case 'left',      set(ball, 'MarkerFaceColor','r', 'MarkerEdgeColor','r');
-%     case 'right',     set(ball, 'MarkerFaceColor','b', 'MarkerEdgeColor','b');
-%     case 'bilateral', set(ball, 'MarkerFaceColor','w', 'MarkerEdgeColor','w');
-% end
+%set(ball, 'MarkerFaceColor',colours.(task_leg), 'MarkerEdgeColor',colours.(task_leg));
+set(ball, 'MarkerFaceColor','none', 'MarkerEdgeColor',colours.(task_leg), 'LineWidth', 2);
 
 % vertical time cursor
 cursor_line = xline(ax_t, 0, colours.cursor, 'LineWidth', 1.5);
@@ -683,7 +678,7 @@ for k = 1:n_steps
         else
             task_force(1,col:idx_end) =  (double(D(force_left, 1:len)) - offset_L) * force_scale;
             task_force(2,col:idx_end) =  (double(D(force_right,1:len)) - offset_R) * force_scale;
-            task_force(3,col:idx_end) = -(double(D(force_left,1:len)+D(force_right,1:len)) - offset_S) * force_scale;
+            task_force(3,col:idx_end) =  (double(D(force_left,1:len)+D(force_right,1:len)) - offset_S) * force_scale;
         end
         task_force(4,col:idx_end) = task_force(1,col:idx_end) / mvc_value;
         task_force(5,col:idx_end) = task_force(2,col:idx_end) / mvc_value;
