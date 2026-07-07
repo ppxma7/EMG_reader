@@ -498,9 +498,16 @@ plot(mvc_force_L, 'r', 'LineWidth', 1.5);
 plot(mvc_force_R, 'b', 'LineWidth', 1.5);
 
 fprintf('MVC — L: %.3f  R: %.3f  Sum: %.3f\n', mvc_value_L, mvc_value_R, mvc_value);
-yline(mvc_value,  'k--', sprintf('Peak: %.3f', mvc_value));
-yline(mvc_value_L,'r--', sprintf('Peak: %.3f', mvc_value_L));
-yline(mvc_value_R,'b--', sprintf('Peak: %.3f', mvc_value_R));
+% yline(mvc_value,  'k--', sprintf('Peak: %.3f', mvc_value));
+% yline(mvc_value_L,'r--', sprintf('Peak: %.3f', mvc_value_L));
+% yline(mvc_value_R,'b--', sprintf('Peak: %.3f', mvc_value_R));
+
+yline(mvc_value,  'k--', sprintf('Peak: %.3f', mvc_value), ...
+    'LabelVerticalAlignment','top', 'LabelHorizontalAlignment','left');
+yline(mvc_value_L,'r--', sprintf('Peak: %.3f', mvc_value_L), ...
+    'LabelVerticalAlignment','bottom', 'LabelHorizontalAlignment','center');
+yline(mvc_value_R,'b--', sprintf('Peak: %.3f', mvc_value_R), ...
+    'LabelVerticalAlignment','top', 'LabelHorizontalAlignment','right');
 
 %title(sprintf('Peaks: %.0f %.0f %.0f', mvc_value, mvc_value_L, mvc_value_R));
 title(sprintf('Peaks: %.3f %.3f %.3f', mvc_value, mvc_value_L, mvc_value_R));
