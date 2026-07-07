@@ -261,6 +261,14 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
             flush(tcpSocket);
 
 
+            %fprintf('>>> MVC = %.3f <<<\n', mvc_value);
+
+            switch task_leg
+                case 'left',      mvc_value = mvc_value_L;
+                case 'right',     mvc_value = mvc_value_R;
+                case 'bilateral', mvc_value = mvc_value;   % sum, already correct
+            end
+
             fprintf('>>> MVC = %.3f <<<\n', mvc_value);
 
 
