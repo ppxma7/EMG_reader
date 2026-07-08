@@ -4,11 +4,11 @@
 
 close all; clear all; clc;
 
-subject = 'sub01';   % set per participant
+subject = '02NB';   % set per participant
 force_dir = 'pull'; % set this to push or pull
-study    = 'STUDY1';
+study    = 'REPEATABILITY';
 muscle   = 'TA';        % e.g. VL, TA, GM
-condition = 'testing'; % Could be PRE/POST/etc.
+condition = 'STATIC'; % Could be PRE/POST/etc.
 % saving order: STUDY subject muscle task_leg task_shape task_level CONDITION
 
 % in volts

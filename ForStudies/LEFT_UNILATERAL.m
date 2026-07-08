@@ -4,25 +4,25 @@
 
 close all; clear all; clc;
 
-subject = 'sub01';   % set per participant
+subject = '02NB';   % set per participant
 force_dir = 'pull'; % set this to push or pull
-study    = 'STUDY1';
+study    = 'REPEATABILITY';
 muscle   = 'TA';        % e.g. VL, TA, GM
-condition = 'testing'; % Could be PRE/POST/etc.
+condition = 'STATIC'; % Could be PRE/POST/etc.
 % saving order: STUDY subject muscle task_leg task_shape task_level CONDITION
 
 % in volts
 %preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
 mvcLeft      = 1;   % V — set per participant
-mvcRight     = 1;   % V — set per participant
+mvcRight     = [];   % V — set per participant
 
 
 mvc_duration = 3;
 
 task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target'
 task_level  = 0.1;          % target as fraction of MVC (ignored for multi_target)
-task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
+task_leg    = 'left';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
 trap_ramp_s = 5;
 trap_hold_s = 30;
 lead_in_s   = 5;
