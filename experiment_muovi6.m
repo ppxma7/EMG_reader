@@ -258,7 +258,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
                 force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                 force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-                force_scale, colours);
+                force_scale, colours, task_leg);
 
 
             flush(tcpSocket);
@@ -409,7 +409,7 @@ function [mvc_value, mvc_value_L, mvc_value_R, mvc_emg, mvc_force_raw,  mvc_forc
     buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-    force_scale, colours)
+    force_scale, colours, task_leg)
 
 for ct = 3:-1:1
     title(ax, sprintf('GET READY... %d', ct));
@@ -491,9 +491,23 @@ fprintf('mvc_force_raw range: %.4f to %.4f\n', min(mvc_force_raw), max(mvc_force
 fprintf('mvc_force_L range: %.4f to %.4f\n', min(mvc_force_L), max(mvc_force_L));
 fprintf('mvc_force_R range: %.4f to %.4f\n', min(mvc_force_R), max(mvc_force_R));
 
-mvc_value_L = max(mvc_force_L);
-mvc_value_R = max(mvc_force_R);
-mvc_value = max(mvc_force_raw);
+% % old peak finding for L, R.
+% mvc_value_L = max(mvc_force_L);
+% mvc_value_R = max(mvc_force_R);
+% mvc_value = max(mvc_force_raw);
+
+% actually we want to choose not peak L and peak R for bilat condition,
+% but when bilat peaks, what are L and R at that index. Subtle but
+% important.
+mvc_value = max(mvc_force_raw); % bilat peak
+if strcmpi(task_leg, 'bilateral') % switch only if doing bilat conditon
+    [~, mvc_idx] = max(mvc_force_raw);
+    mvc_value_L  = mvc_force_L(mvc_idx);
+    mvc_value_R  = mvc_force_R(mvc_idx);
+else
+    mvc_value_L = max(mvc_force_L);
+    mvc_value_R = max(mvc_force_R);
+end
 
 mf = figure;
 plot(mvc_force_raw, 'k', 'LineWidth', 1.5); hold on;
