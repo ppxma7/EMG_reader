@@ -4,28 +4,28 @@
 
 close all; clear all; clc;
 
-subject = '02NB';   % set per participant
+subject = 'sub01';   % set per participant
 force_dir = 'pull'; % set this to push or pull
-study    = 'REPEATABILITY';
+study    = 'STUDY1';
 muscle   = 'TA';        % e.g. VL, TA, GM
-condition = 'STATIC'; % Could be PRE/POST/etc.
+condition = 'testing'; % Could be PRE/POST/etc.
 % saving order: STUDY subject muscle task_leg task_shape task_level CONDITION
 
 % in volts
 %preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
 mvcLeft      = [];   % V — set per participant
-mvcRight     = 1;   % V — set per participant
+mvcRight     = [];   % V — set per participant
 
 
 mvc_duration = 3;
 
 task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target'
 task_level  = 0.1;          % target as fraction of MVC (ignored for multi_target)
-task_leg    = 'right';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
+task_leg    = 'left';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
 trap_ramp_s = 5;
 trap_hold_s = 30;
-lead_in_s   = 5;
+lead_in_s   = 3;
 multi_trap_rest_s = 2;   % rest between traps (multi_trap only)
 
 mcon_cycles = 8;
@@ -258,7 +258,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                 buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
                 force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                 force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-                force_scale, colours);
+                force_scale, colours, task_leg);
 
 
             flush(tcpSocket);
@@ -409,7 +409,7 @@ function [mvc_value, mvc_value_L, mvc_value_R, mvc_emg, mvc_force_raw,  mvc_forc
     buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_duration, emg_channels, n_emg, ConvFact,...
-    force_scale, colours)
+    force_scale, colours, task_leg)
 
 for ct = 3:-1:1
     title(ax, sprintf('GET READY... %d', ct));
@@ -491,9 +491,23 @@ fprintf('mvc_force_raw range: %.4f to %.4f\n', min(mvc_force_raw), max(mvc_force
 fprintf('mvc_force_L range: %.4f to %.4f\n', min(mvc_force_L), max(mvc_force_L));
 fprintf('mvc_force_R range: %.4f to %.4f\n', min(mvc_force_R), max(mvc_force_R));
 
-mvc_value_L = max(mvc_force_L);
-mvc_value_R = max(mvc_force_R);
-mvc_value = max(mvc_force_raw);
+% % old peak finding for L, R.
+% mvc_value_L = max(mvc_force_L);
+% mvc_value_R = max(mvc_force_R);
+% mvc_value = max(mvc_force_raw);
+
+% actually we want to choose not peak L and peak R for bilat condition,
+% but when bilat peaks, what are L and R at that index. Subtle but
+% important.
+mvc_value = max(mvc_force_raw); % bilat peak
+if strcmpi(task_leg, 'bilateral') % switch only if doing bilat conditon
+    [~, mvc_idx] = max(mvc_force_raw);
+    mvc_value_L  = mvc_force_L(mvc_idx);
+    mvc_value_R  = mvc_force_R(mvc_idx);
+else
+    mvc_value_L = max(mvc_force_L);
+    mvc_value_R = max(mvc_force_R);
+end
 
 mf = figure;
 plot(mvc_force_raw, 'k', 'LineWidth', 1.5); hold on;
