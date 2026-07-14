@@ -536,7 +536,7 @@ title(sprintf('Peaks: %.3f %.3f %.3f', mvc_value, mvc_value_L, mvc_value_R));
 
 xlabel('Samples'); ylabel('Force (ADC)');
 
-legend(mf,{'Sum','Left','Right'},'Location','northwest');
+legend({'Sum','Left','Right'},'Location','bestoutside');
 
 end
 
