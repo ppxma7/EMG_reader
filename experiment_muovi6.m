@@ -86,8 +86,10 @@ end
 % and sends it over TCP as two bytes. 
 % readBlock reassembles those two bytes back into the integer, and 
 % force_scale converts that integer back to volts.
-force_scale = 5.0 / 65536;
-
+force_scale = 10.0 / 65536;
+% manual on page 13, says this should be +-5V, not +-2.5V, so 10V total
+% span
+% force_scale = 5.0 / 65536;
 
 % =========================================================================
 % USER OPTIONS
