@@ -36,19 +36,21 @@ right_multi_target = 0.25;
 % -------------------------------------------------------------------------
 % DISPLAY COLOURS (change here — applies everywhere)
 % -------------------------------------------------------------------------
-colours.bg          = 'k';           % figure/axes background
-colours.grid        = [0.3 0.3 0.3]; % grid lines
-%colours.target      = [0.2 0.9 0.2]; % target trace
-colours.target      = [0.33 0.64 0.30]; 
-colours.cursor      = 'w';           % vertical time cursor
-colours.text        = 'w';           % axis labels, titles, ticks
-%colours.left        = 'r';           % left leg force line + ball
-colours.left        = [1 0.16 0.16];          
-% colours.right       = 'b';           % right leg force line + ball
-colours.right       = [0.76 0.56 0.92];
-colours.bilateral   = 'w';           % bilateral force line + ball
-colours.waitingRoom = 'w';           % background of force trace before task
-colours.mvc         = [0.9882    0.5725    0.4471];
+colours.bg          = 'k';                      % figure/axes background - default black
+colours.grid        = [0.3 0.3 0.3];            % grid lines
+%colours.target      = [0.2 0.9 0.2];           % target trace - green 1 (neon)
+%colours.target      = [0.33 0.64 0.30];        % target trace - green 2 (better)
+colours.target      = [0 0.62 0.451];           % target trace - green 3 (CBsafe)
+%colours.target      = [0.5 0.5 0.5];           % target trace - grey
+colours.cursor      = 'w';                      % vertical time cursor
+colours.text        = 'w';                      % axis labels, titles, ticks
+%colours.left        = [1 0.16 0.16];           % left leg force line + ball - red 1 
+colours.left        = [0.835 0.369 0];          % left leg force line + ball - orange (CBsafe)
+%colours.right       = [0.76 0.56 0.92];        % right leg force line + ball - purple 1
+colours.right       = [0.8667 0.1294 0.4902];   % right leg force line + ball - pink (CBsafe)
+colours.bilateral   = 'w';                      % bilateral force line + ball
+colours.waitingRoom = 'w';                      % background of force trace before task
+colours.mvc         = [0.9882 0.5725 0.4471];   % MVC push/pull background
 
 colours.ballSize = 16;
 
@@ -534,6 +536,7 @@ title(sprintf('Peaks: %.3f %.3f %.3f', mvc_value, mvc_value_L, mvc_value_R));
 
 xlabel('Samples'); ylabel('Force (ADC)');
 
+legend(mf,{'Sum','Left','Right'},'Location','northwest');
 
 end
 
