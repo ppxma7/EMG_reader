@@ -1058,7 +1058,13 @@ signal_mvc.auxiliaryname = {'Force_Sum_raw', 'Force_L_raw', 'Force_R_raw'};
 signal_mvc.target        = [];
 
 % for forceGUI
-Force = mvc_force_raw;
+if strcmpi(task_leg,'bilateral')
+    Force = mvc_force_raw;
+elseif strcmpi(task_leg,'left')
+    Force = mvc_force_L;
+elseif strcmpi(task_leg,'right')
+    Force = mvc_force_R;
+end
 
 % for filename
 if strcmpi(task_leg,'bilateral'); lenLeg = 5; else; lenLeg = 4; end
