@@ -12,24 +12,33 @@ condition = 'testing'; % Could be PRE/POST/etc.
 % saving order: STUDY subject muscle task_leg task_shape task_level CONDITION
 
 % in volts
-%preComputedMVC = 1.2;   % set to a value e.g. 3 to skip MVC, [] to require MVC
 
+% mvc
 mvcLeft      = 1;   % V — set per participant
 mvcRight     = 1;   % V — set per participant
-
-
 mvc_duration = 3;
 
-task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target'
+% all in seconds
+% general task
+task_shape  = 'half-sombrero';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target' | 'half-sombrero'
 task_level  = 0.1;          % target as fraction of MVC (ignored for multi_target)
-task_leg    = 'bilateral';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
+task_leg    = 'right';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
 trap_ramp_s = 5;
-trap_hold_s = 30;
+trap_hold_s = 10;
 lead_in_s   = 5;
+
+%multi-trap
 multi_trap_rest_s = 2;   % rest between traps (multi_trap only)
 
+%sombrero
+brim_height = 0.4; % fraction of task level (for mid plateau height)
+brim_length = 5; % length of the mid plateau
+brim_ramp_to_peak = 5; % length of ramp from mid to peak plateau
+
+%mcon
 mcon_cycles = 8;
 
+%multi-target
 left_multi_target = 0.5;
 right_multi_target = 0.25;
 
@@ -321,14 +330,14 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                     force_left, force_right, offset_L, offset_R, offset_S, ...
                     force_dir, sampFreq, mvcLeft, mvcRight, multi_target_cfg, mcon_cycles, ...
                     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact, ...
-                    force_scale, colours);
+                    force_scale, colours, brim_height, brim_length, brim_ramp_to_peak);
             else
                 [task_force, task_emg, task_extra] = run_task(tcpSocket, ax, hl, hr, hs, ...
                     buf_L, buf_R, buf_S, TotNumByte, blockSamples, bytesPerBlock, ...
                     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                     force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles, ...
                     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-                    force_scale, multi_trap_rest_s, colours);
+                    force_scale, multi_trap_rest_s, colours, brim_height, brim_length, brim_ramp_to_peak);
             end
 
 
@@ -547,7 +556,7 @@ function [task_force, task_emg, task_extra] = run_task(tcpSocket, ax, hl, hr, hs
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles,...
     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-    force_scale, multi_trap_rest_s, colours)
+    force_scale, multi_trap_rest_s, colours, brim_height, brim_length, brim_ramp_to_peak)
 % Static-plot task display: target drawn once, cursor + force trail update each block.
 % Works for all single-leg shapes: trap | sombrero | mcon | multi_trap.
 
@@ -566,9 +575,9 @@ switch task_shape
             zeros(1,lead_steps)];
 
     case 'sombrero'
-        brim_level = task_level * 0.4;
-        brim_steps = round(1.5 * updates_per_sec);
-        dip_steps  = round(1.0 * updates_per_sec);
+        brim_level = task_level * brim_height;
+        brim_steps = round(brim_length * updates_per_sec);
+        dip_steps  = round(brim_ramp_to_peak * updates_per_sec);
         target_trace = [zeros(1,lead_steps), ...
             linspace(0,brim_level,ramp_steps), ...
             brim_level*ones(1,brim_steps), ...
@@ -577,6 +586,18 @@ switch task_shape
             linspace(task_level,brim_level,dip_steps), ...
             brim_level*ones(1,brim_steps), ...
             linspace(brim_level,0,ramp_steps), ...
+            zeros(1,lead_steps)];
+
+    case 'half-sombrero'
+        brim_level = task_level * brim_height;
+        brim_steps = round(brim_length * updates_per_sec);
+        dip_steps  = round(brim_ramp_to_peak * updates_per_sec);
+        target_trace = [zeros(1,lead_steps), ...
+            linspace(0,brim_level,ramp_steps), ...
+            brim_level*ones(1,brim_steps), ...
+            linspace(brim_level,task_level,dip_steps), ...
+            task_level*ones(1,hold_steps), ...
+            linspace(task_level,0,ramp_steps), ...
             zeros(1,lead_steps)];
 
     case 'mcon'
@@ -810,7 +831,7 @@ function [task_force, task_emg] = run_multi_target(tcpSocket, ax, hl, hr, hs, ..
     force_left, force_right, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvcLeft, mvcRight, cfg, mcon_cycles, ...
     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact, ...
-    force_scale, colours)
+    force_scale, colours , brim_height, brim_length, brim_ramp_to_peak)
 % run_multi_target — bilateral static-plot display with per-leg targets.
 % Each leg gets its own subplot. Target is pre-drawn as a static line.
 % A vertical cursor advances in real time; user force trail follows it.
@@ -836,9 +857,9 @@ for i = 1:n_legs
                 linspace(lv,0,ramp_steps), ...
                 zeros(1,lead_steps)];
         case 'sombrero'
-            brim_level = lv * 0.4;
-            brim_steps = round(1.5 * updates_per_sec);
-            dip_steps  = round(1.0 * updates_per_sec);
+            brim_level = lv * brim_height;
+            brim_steps = round(brim_length * updates_per_sec);
+            dip_steps  = round(brim_ramp_to_peak * updates_per_sec);
             target_traces{i} = [zeros(1,lead_steps), ...
                 linspace(0,brim_level,ramp_steps), ...
                 brim_level*ones(1,brim_steps), ...
