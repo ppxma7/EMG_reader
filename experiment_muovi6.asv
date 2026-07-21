@@ -128,7 +128,7 @@ bytesPerBlock = TotNumByte * blockSamples;
 force_left  = 141;
 force_right = 142;
 force_sum   = 143;
-extra_channels = [69, 139, 145];
+
 % channels:
 % 65,66,67,68 are IMU, 69 is sync trigger for muovi 1, 70 is sample counter
 % 135,136,137,138 are IMU, 139 is sync trigger for muovi 2, 140 is sample counter
@@ -343,7 +343,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
                     force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles, ...
                     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-                    force_scale, multi_trap_rest_s, colours, brim_height, brim_length, brim_ramp_to_peak, use_constant_slope, extra_channels);
+                    force_scale, multi_trap_rest_s, colours, brim_height, brim_length, brim_ramp_to_peak, use_constant_slope);
             end
 
 
@@ -359,7 +359,7 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                     save_level = task_level;
                 end
                 %save_task(datapath, task_emg, task_force, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape, save_level, save_leg, study, muscle, condition);
-                save_task(datapath, task_emg, task_force, task_extra, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape_save, save_level, save_leg, study, muscle, condition, extra_channels);
+                save_task(datapath, task_emg, task_force, task_extra, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape_save, save_level, save_leg, study, muscle, condition);
 
 
 
@@ -562,7 +562,7 @@ function [task_force, task_emg, task_extra] = run_task(tcpSocket, ax, hl, hr, hs
     force_left, force_right, force_sum, offset_L, offset_R, offset_S, ...
     force_dir, sampFreq, mvc_value, task_leg, task_shape, task_level, mcon_cycles,...
     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact,...
-    force_scale, multi_trap_rest_s, colours, brim_height, brim_length, brim_ramp_to_peak, use_constant_slope, extra_channels)
+    force_scale, multi_trap_rest_s, colours, brim_height, brim_length, brim_ramp_to_peak, use_constant_slope)
 % Static-plot task display: target drawn once, cursor + force trail update each block.
 % Works for all single-leg shapes: trap | sombrero | mcon | multi_trap.
 
@@ -674,9 +674,10 @@ t_axis_upd = (0:n_steps-1) * (blockSamples / sampFreq);
 % preallocate storage (7 rows: raw L/R/sum, norm L/R/sum, target)
 task_force = zeros(7, n_samples);
 task_emg   = zeros(n_emg, n_samples);
+
 %task_extra = zeros(12,n_samples); %  channels 135:146
-n_extra = numel(extra_channels);
-task_extra = zeros(n_extra, n_samples);
+task_extra = zeros(3,n_samples); %  
+
 
 % --- build static display figure ---
 %leg_color = struct('left','r','right','b','bilateral','k');
@@ -792,8 +793,7 @@ for k = 1:n_steps
             task_force(7,col:idx_end) = target_trace(k);
         end
         task_emg(:,col:idx_end) = double(D(emg_channels,1:len)) * ConvFact;
-        %task_extra(:,col:idx_end) = D(135:146,1:len);
-        task_extra(:,col:idx_end) = D(extra_channels,1:len); 
+        task_extra(:,col:idx_end) = D(135:146,1:len);
         col = col + len;
     end
 
@@ -821,7 +821,7 @@ disp('Task complete.');
 end
 
 %% save_task
-function save_task(datapath, task_emg, task_force, task_extra, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg, study, muscle, condition, extra_channels)
+function save_task(datapath, task_emg, task_force, task_extra, mvc_value, sampFreq, n_emg, subject, force_dir, task_shape,task_level,task_leg, study, muscle, condition)
 
 signal.data          = task_emg;
 signal.fsamp         = sampFreq;
@@ -832,8 +832,7 @@ signal.muscle        = {'Muscle1', 'Muscle2'};
 
 signal.auxiliary      = task_force;
 signal.extra          = task_extra;
-%signal.extra_channels = 135:146;
-signal.extra_channels = extra_channels;
+signal.extra_channels = 135:146;
 
 if strcmp(task_shape, 'multi_target')
     signal.auxiliaryname = {'Force_L_raw','Force_R_raw', ...
