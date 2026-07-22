@@ -84,7 +84,7 @@ else
 end
 
 % fudge for saving
-if trap_hold_s == 0
+if trap_hold_s == 0 && ~contains(task_shape,'sombrero')
     task_shape_save = 'ramp';
 else
     task_shape_save = task_shape;
@@ -136,9 +136,9 @@ extra_channels = [69, 139, 145];
 
 n_emg         = 128;          % 64 per Muovi+
 emg_channels  = [1:64, 71:134];
-datapath      = 'C:\Users\masgh\data\emgReaderData\';
+%datapath      = 'C:\Users\masgh\data\emgReaderData\';
 %datapath = 'D:\OneDrive - The University of Nottingham\Mathew Piasecki (staff)''s files - ePhys Lab\Michael\';
-
+datapath = 'C:\Users\Cybex\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
 ConvFact = 0.000286;   % converts raw ADC to mV for EMG
 
 emg_ylim_std = [0 500];   % ignored - this for EMG activity std figure
