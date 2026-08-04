@@ -14,13 +14,13 @@ condition = 'testing'; % Could be PRE/POST/etc.
 % in volts
 
 % mvc
-mvcLeft      = 1;   % V — set per participant
-mvcRight     = 1;   % V — set per participant
+mvcLeft      = [];   % V — set per participant
+mvcRight     = [];   % V — set per participant
 mvc_duration = 3;
 
 % all in seconds
 % general task
-task_shape  = 'half-sombrero';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target' | 'half-sombrero'
+task_shape  = 'trap';   % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target' | 'half-sombrero'
 task_level  = 0.1;          % target as fraction of MVC (ignored for multi_target)
 task_leg    = 'right';  % 'left' | 'right' | 'bilateral' (ignored for multi_target)
 trap_ramp_s = 5;
@@ -138,7 +138,8 @@ n_emg         = 128;          % 64 per Muovi+
 emg_channels  = [1:64, 71:134];
 %datapath      = 'C:\Users\masgh\data\emgReaderData\';
 %datapath = 'D:\OneDrive - The University of Nottingham\Mathew Piasecki (staff)''s files - ePhys Lab\Michael\';
-datapath = 'C:\Users\Cybex\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
+datapath = 'C:\Users\masgh\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
+%datapath = 'C:\Users\Cybex\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
 ConvFact = 0.000286;   % converts raw ADC to mV for EMG
 
 emg_ylim_std = [0 500];   % ignored - this for EMG activity std figure
@@ -433,12 +434,16 @@ function [mvc_value, mvc_value_L, mvc_value_R, mvc_emg, mvc_force_raw,  mvc_forc
 for ct = 3:-1:1
     title(ax, sprintf('GET READY... %d', ct));
     drawnow; pause(1);
+    if ct == 2
+        flush(tcpSocket);   % clears backlog, leaving only the final 1s before push. This is to save 1s baseline for MVC calc in forceGUI
+    end
 end
 title(ax, '*** PUSH NOW ***'); drawnow;
 set(ax, 'Color', colours.mvc);
 drawnow;
 
-flush(tcpSocket);
+%flush(tcpSocket); % add this to clear any recording before end of
+%coutndown
 
 mvc_n         = mvc_duration * sampFreq;
 mvc_emg       = zeros(n_emg, mvc_n);
