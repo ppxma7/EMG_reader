@@ -10,12 +10,12 @@ close all; clear all; clc;
 
 subject   = 'sub01';
 force_dir = 'pull';
-study     = 'STUDY1';
+study     = 'NOVE';
 muscle    = 'TA';
 condition = 'testing';
 
-mvcLeft      = 10000;
-mvcRight     = 10000;
+mvcLeft      = [];
+mvcRight     = [];
 mvc_duration = 3;
 
 task_shape  = 'trap';
@@ -100,27 +100,34 @@ n_emg          = nGrids * n_bio_per_grid;
 
 ConvFact = 0.0002861;   % mV per count for HRES=0, Gain code 00 (286.1 nV resolution)
 
-% % ---- LOAD CELL calibration — SET THESE FROM YOUR LOAD CELLS' DATASHEETS ----
-% LCFS_L   = 1000;    % Left load cell full scale, in Newtons (EDIT ME)
-% LCFS_R   = 1000;    % Right load cell full scale, in Newtons (EDIT ME)
-% LCSENS_L = 2;       % Left load cell sensitivity, mV/V (typical ~2, EDIT ME)
-% LCSENS_R = 2;       % Right load cell sensitivity, mV/V (EDIT ME)
-% ADCRANGE = 5;        % V, fixed (manual 7.2.3)
-% ADCRES   = 65536;    % 16-bit, fixed
-% GAIN     = 205;      % V/V, fixed internal gain on LOAD CELL inputs
-% LCSUPV   = 5;        % V, fixed load cell excitation supply
-% 
-% force_scale_L = ADCRANGE*1000*LCFS_L/(ADCRES*GAIN*LCSENS_L*LCSUPV);  % counts -> Newtons
-% force_scale_R = ADCRANGE*1000*LCFS_R/(ADCRES*GAIN*LCSENS_R*LCSUPV);  % counts -> Newtons
+% % ---- LOAD CELL calibration — 
+% calibration ephys lab
+% 514.98x + 63.529
+% 1/514.98
+% newtons = (1/514.98) *9.81
+
+% force_scale_L = 514.98;   % Slope (m)
+% force_scale_R = 514.98;   % Update if right cell differs
+% cal_intercept_L = 63.529; % Intercept (c)
+% cal_intercept_R = 63.529;
 
 % ---- LOAD CELL ----
 % Currently using raw Novecento load-cell counts.
 % Set to 1 for now because the load cells have not been calibrated yet.
 
-force_scale_L = 1;
-force_scale_R = 1;
+% S-type
+% (1 / 514.98) * 9.81 = 0.01905 N per count
+% force_scale_L = 0.01905;   
+% force_scale_R = 0.01905;   
 
-datapath = 'C:\Users\masgh\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
+% B1411991 load cell
+% 254.54x + 10.173
+% (1 / 254.54) * 9.81 = 0.0385 N per count
+
+force_scale_L = 1;   
+force_scale_R = 1;   
+
+datapath = 'C:\Users\Cybex\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
 
 emg_ylim_std = [0 500];
 mvc_value = 0;
@@ -286,6 +293,8 @@ if ~isempty(preComputedMVC)
     ylabel(ax, 'Force (MVC fraction)');
     fprintf('Using precomputed MVC = %.3f\n', mvc_value);
 end
+
+
 
 %% MAIN LOOP
 %flush(tcpSocket);
