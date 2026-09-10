@@ -519,6 +519,10 @@ mvc_force_R   = zeros(1, mvc_n);
 col     = 1;
 t_start = tic;
 
+% measure time
+% Place right before the while loop starts
+mvc_start_time = tic;
+
 while col <= mvc_n
     elapsed   = toc(t_start);
     remaining = max(0, mvc_duration - elapsed);
@@ -548,10 +552,10 @@ while col <= mvc_n
 
     if strcmp(force_dir,'push')
         mvc_force_L(col:idx_end) = -(double(D(force_left, 1:len))  - offset_L) * force_scale_L;
-        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale_R;
+        mvc_force_R(col:idx_end) = (double(D(force_right,1:len))  - offset_R) * force_scale_R;
     else
         mvc_force_L(col:idx_end) = (double(D(force_left, 1:len))  - offset_L) * force_scale_L;
-        mvc_force_R(col:idx_end) = (double(D(force_right,1:len))  - offset_R) * force_scale_R;
+        mvc_force_R(col:idx_end) = -(double(D(force_right,1:len))  - offset_R) * force_scale_R;
     end
     mvc_force_raw(col:idx_end) = mvc_force_L(col:idx_end) + mvc_force_R(col:idx_end);
 
@@ -560,6 +564,10 @@ while col <= mvc_n
     col = col + len;
     drawnow limitrate;
 end
+
+actual_duration = toc(mvc_start_time);
+fprintf('--> RECORDING FINISHED: Collected %d samples in %.3f seconds (Target: %.3f s)\n', ...
+    mvc_n, actual_duration, mvc_duration);
 
 title(ax, 'MVC complete');
 set(ax, 'Color', colours.waitingRoom);
@@ -763,10 +771,10 @@ for k = 1:n_steps
         len     = idx_end - col + 1;
         if strcmp(force_dir,'push')
             task_force(1,col:idx_end) = -(double(D(force_left, 1:len)) - offset_L) * force_scale_L;
-            task_force(2,col:idx_end) = -(double(D(force_right,1:len)) - offset_R) * force_scale_R;
+            task_force(2,col:idx_end) = (double(D(force_right,1:len)) - offset_R) * force_scale_R;
         else
             task_force(1,col:idx_end) =  (double(D(force_left, 1:len)) - offset_L) * force_scale_L;
-            task_force(2,col:idx_end) =  (double(D(force_right,1:len)) - offset_R) * force_scale_R;
+            task_force(2,col:idx_end) = -(double(D(force_right,1:len)) - offset_R) * force_scale_R;
         end
         task_force(3,col:idx_end) = task_force(1,col:idx_end) + task_force(2,col:idx_end);
         task_force(4,col:idx_end) = task_force(1,col:idx_end) / mvc_value;
