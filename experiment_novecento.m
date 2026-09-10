@@ -9,7 +9,7 @@
 close all; clear all; clc;
 
 subject   = 'sub01';
-force_dir = 'pull';
+force_dir = 'push';
 study     = 'NOVE';
 muscle    = 'TA';
 condition = 'testing';
@@ -73,7 +73,7 @@ IP_USB   = '169.254.1.10';
 IP_WiFi  = '192.168.1.1';
 TCPPort  = 23456;
 
-nGrids   = 2;         % number of BIO64HD (64ch) grids in use — increase up to 6 (IN1..IN6)
+nGrids   = 6;         % number of BIO64HD (64ch) grids in use — increase up to 6 (IN1..IN6)
 FSelAux  = 2;          % rear AUX/LOAD CELL block sampling rate: 1=500,2=2000,3=4000,4=8000 Hz
 AuxFsampCode = [0 16 32 48];  % ACQ_SETT_A codes for the 4 rates above
 FsampVal     = [500 2000 4000 8000];
@@ -117,17 +117,17 @@ ConvFact = 0.0002861;   % mV per count for HRES=0, Gain code 00 (286.1 nV resolu
 
 % S-type
 % (1 / 514.98) * 9.81 = 0.01905 N per count
-% force_scale_L = 0.01905;   
-% force_scale_R = 0.01905;   
+force_scale_L = 0.01905;   
+force_scale_R = 0.01905;   
 
 % B1411991 load cell
 % 254.54x + 10.173
 % (1 / 254.54) * 9.81 = 0.0385 N per count
 
-force_scale_L = 1;   
-force_scale_R = 1;   
+%force_scale_L = 1;   
+%force_scale_R = 1;   
 
-datapath = 'C:\Users\Cybex\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
+datapath = 'C:\Users\masgh\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
 
 emg_ylim_std = [0 500];
 mvc_value = 0;
@@ -307,10 +307,10 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
 
     if strcmp(force_dir, 'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR = (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     else
         fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR =  -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     end
     fS = fL + fR;
 
@@ -529,10 +529,10 @@ while col <= mvc_n
 
     if strcmp(force_dir,'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR = (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     else
         fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     end
     fS = fL + fR;
 
@@ -740,10 +740,10 @@ for k = 1:n_steps
 
     if strcmp(force_dir,'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR = (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     else
         fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     end
     fS = fL + fR;
     dL = fL/mvc_value;  dR = fR/mvc_value;  dS = fS/mvc_value;
@@ -992,10 +992,10 @@ for k = 1:n_steps
 
     if strcmp(force_dir, 'push')
         fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR = (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     else
         fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale_L;
-        fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     end
 
     dL = fL / mvcLeft;
