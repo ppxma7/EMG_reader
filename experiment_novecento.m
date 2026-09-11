@@ -418,6 +418,13 @@ while ~strcmp(guidata(force_fig).pressed, 'q')
                     force_dir, sampFreq, mvcLeft, mvcRight, multi_target_cfg, mcon_cycles, ...
                     trap_ramp_s, trap_hold_s, lead_in_s, emg_channels, n_emg, ConvFact, ...
                     force_scale_L, force_scale_R, colours, brim_height, brim_length, brim_ramp_to_peak, use_constant_slope);
+            elseif strcmp(task_shape, 'multi_trap')
+                [task_force, task_emg, task_extra] = run_multi_trap_fatigue(tcpSocket, ...
+                    PacketSize1Block, blockPeriods500, Ptr_IN, nGrids, mult, accMult, blockSamples, bytesPerBlock, ...
+                    force_left, force_right, offset_L, offset_R, ...
+                    force_dir, sampFreq, mvc_value, task_leg, task_level, ...
+                    trap_ramp_s, trap_hold_s, lead_in_s, multi_trap_rest_s, ...
+                    emg_channels, n_emg, ConvFact, force_scale_L, force_scale_R, colours, extra_channels);
             else
                 [task_force, task_emg, task_extra] = run_task(tcpSocket, ax, hl, hr, hs, ...
                     buf_L, buf_R, buf_S, PacketSize1Block, blockPeriods500, Ptr_IN, nGrids, mult, accMult, blockSamples, bytesPerBlock, ...
@@ -754,22 +761,22 @@ switch task_shape
             linspace(sine_wave(end), 0, ramp_steps), ...
             zeros(1,lead_steps)];
 
-    case 'multi_trap'
-        rest_steps  = round(multi_trap_rest_s * updates_per_sec);
-        total_steps = round(30 * 60 * updates_per_sec);
-        single_trap = [linspace(0,task_level,ramp_steps), ...
-            task_level*ones(1,hold_steps), ...
-            linspace(task_level,0,ramp_steps), ...
-            zeros(1,rest_steps)];
-        n_reps = ceil(total_steps / numel(single_trap));
-        target_trace = [zeros(1,lead_steps), repmat(single_trap,1,n_reps)];
-        target_trace = target_trace(1 : lead_steps + total_steps);
+    % case 'multi_trap'
+    %     rest_steps  = round(multi_trap_rest_s * updates_per_sec);
+    %     total_steps = round(30 * 60 * updates_per_sec);
+    %     single_trap = [linspace(0,task_level,ramp_steps), ...
+    %         task_level*ones(1,hold_steps), ...
+    %         linspace(task_level,0,ramp_steps), ...
+    %         zeros(1,rest_steps)];
+    %     n_reps = ceil(total_steps / numel(single_trap));
+    %     target_trace = [zeros(1,lead_steps), repmat(single_trap,1,n_reps)];
+    %     target_trace = target_trace(1 : lead_steps + total_steps);
 
     otherwise
         error('Unknown task_shape: %s', task_shape);
 end
 
-do_record  = ~strcmp(task_shape, 'multi_trap');
+%do_record  = ~strcmp(task_shape, 'multi_trap');
 n_steps    = numel(target_trace);
 n_samples  = n_steps * blockSamples;
 t_axis_upd = (0:n_steps-1) * (blockSamples / sampFreq);
@@ -831,10 +838,10 @@ for k = 1:n_steps
     D = readBlockNovecento(tcpSocket, PacketSize1Block, nPeriods500, Ptr_IN, nGrids, mult, accMult, blockSamples);
 
     if strcmp(force_dir,'push')
-        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale_L;
+        fL = (mean(double(D(force_left, :))) - offset_L) * force_scale_L;
         fR = (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     else
-        fL =  (mean(double(D(force_left, :))) - offset_L) * force_scale_L;
+        fL = -(mean(double(D(force_left, :))) - offset_L) * force_scale_L;
         fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
     end
     fS = fL + fR;
@@ -850,29 +857,29 @@ for k = 1:n_steps
     set(ball, 'XData', t_axis_upd(k), 'YData', disp_val);
     set(cursor_line, 'Value', t_axis_upd(k));
 
-    if do_record
-        idx_end = min(col+blockSamples-1, n_samples);
-        len     = idx_end - col + 1;
-        if strcmp(force_dir,'push')
-            task_force(1,col:idx_end) = (double(D(force_left, 1:len)) - offset_L) * force_scale_L;
-            task_force(2,col:idx_end) = (double(D(force_right,1:len)) - offset_R) * force_scale_R;
-        else
-            task_force(1,col:idx_end) = -(double(D(force_left, 1:len)) - offset_L) * force_scale_L;
-            task_force(2,col:idx_end) = -(double(D(force_right,1:len)) - offset_R) * force_scale_R;
-        end
-        task_force(3,col:idx_end) = task_force(1,col:idx_end) + task_force(2,col:idx_end);
-        task_force(4,col:idx_end) = task_force(1,col:idx_end) / mvc_value;
-        task_force(5,col:idx_end) = task_force(2,col:idx_end) / mvc_value;
-        task_force(6,col:idx_end) = task_force(3,col:idx_end) / mvc_value;
-        if k < n_steps
-            task_force(7,col:idx_end) = linspace(target_trace(k), target_trace(k+1), len);
-        else
-            task_force(7,col:idx_end) = target_trace(k);
-        end
-        task_emg(:,col:idx_end) = double(D(emg_channels,1:len)) * ConvFact;
-        task_extra(:,col:idx_end) = D(extra_channels,1:len);
-        col = col + len;
+    %if do_record
+    idx_end = min(col+blockSamples-1, n_samples);
+    len     = idx_end - col + 1;
+    if strcmp(force_dir,'push')
+        task_force(1,col:idx_end) = (double(D(force_left, 1:len)) - offset_L) * force_scale_L;
+        task_force(2,col:idx_end) = (double(D(force_right,1:len)) - offset_R) * force_scale_R;
+    else
+        task_force(1,col:idx_end) = -(double(D(force_left, 1:len)) - offset_L) * force_scale_L;
+        task_force(2,col:idx_end) = -(double(D(force_right,1:len)) - offset_R) * force_scale_R;
     end
+    task_force(3,col:idx_end) = task_force(1,col:idx_end) + task_force(2,col:idx_end);
+    task_force(4,col:idx_end) = task_force(1,col:idx_end) / mvc_value;
+    task_force(5,col:idx_end) = task_force(2,col:idx_end) / mvc_value;
+    task_force(6,col:idx_end) = task_force(3,col:idx_end) / mvc_value;
+    if k < n_steps
+        task_force(7,col:idx_end) = linspace(target_trace(k), target_trace(k+1), len);
+    else
+        task_force(7,col:idx_end) = target_trace(k);
+    end
+    task_emg(:,col:idx_end) = double(D(emg_channels,1:len)) * ConvFact;
+    task_extra(:,col:idx_end) = D(extra_channels,1:len);
+    col = col + len;
+    %end
 
     if toc(t_render) >= render_interval
         drawnow limitrate;
@@ -1183,7 +1190,7 @@ save(fullfile(datapath, fname), 'signal_mvc', 'mvc_value', ...
 disp('MVC saved.');
 end
 
-
+%% readBlockNovecento
 function D = readBlockNovecento(tcpSocket, PacketSize1Block, nPeriods500, Ptr_IN, nGrids, mult, accMult, blockSamples)
 
 % Calculate exact block byte size locally (int16 = 2 bytes)
@@ -1223,6 +1230,7 @@ D_acc        = accChunk(:, decim:decim:end);
 D = [D_grids; D_aux; D_acc];
 end
 
+%% clear tcp backlog
 function clear_tcp_backlog(tcpSocket, bytesPerBlock)
     % Reads out full integer blocks, leaving only clean block alignments
     avail = tcpSocket.NumBytesAvailable;
@@ -1230,4 +1238,137 @@ function clear_tcp_backlog(tcpSocket, bytesPerBlock)
     if nBlocks > 0
         read(tcpSocket, nBlocks * bytesPerBlock, 'uint8');
     end
+end
+
+%% run_multi_trap_fatigue — one trap at a time, loops until 'q', always records
+function [task_force, task_emg, task_extra] = run_multi_trap_fatigue(tcpSocket, ...
+    PacketSize1Block, nPeriods500, Ptr_IN, nGrids, mult, accMult, blockSamples, bytesPerBlock, ...
+    force_left, force_right, offset_L, offset_R, ...
+    force_dir, sampFreq, mvc_value, task_leg, task_level, ...
+    trap_ramp_s, trap_hold_s, lead_in_s, multi_trap_rest_s, ...
+    emg_channels, n_emg, ConvFact, force_scale_L, force_scale_R, colours, extra_channels)
+
+updates_per_sec = sampFreq / blockSamples;
+ramp_steps = round(trap_ramp_s * updates_per_sec);
+hold_steps = round(trap_hold_s * updates_per_sec);
+lead_steps = round(lead_in_s   * updates_per_sec);
+rest_steps = round(multi_trap_rest_s * updates_per_sec);
+
+single_trap = [linspace(0,task_level,ramp_steps), task_level*ones(1,hold_steps), ...
+               linspace(task_level,0,ramp_steps), zeros(1,rest_steps)];
+n_steps_rep = numel(single_trap);
+t_axis_rep  = (0:n_steps_rep-1) * (blockSamples/sampFreq);
+
+col_str = colours.(task_leg);
+
+task_fig = figure('Color',colours.bg,'Name','Multi-trap fatigue', ...
+    'Units','normalized','OuterPosition',[0 0 1 1]);
+guidata(task_fig, struct('pressed',''));
+set(task_fig,'KeyPressFcn',@(src,e) guidata(src,setfield(guidata(src),'pressed',e.Key)));
+
+ax_t = axes(task_fig); hold(ax_t,'on');
+set(ax_t,'Color',colours.bg,'XColor',colours.text,'YColor',colours.text, ...
+    'XGrid','on','YGrid','on','GridColor',colours.grid);
+plot(ax_t, t_axis_rep, single_trap, 'Color',colours.target, 'LineWidth',5);
+user_line = plot(ax_t, t_axis_rep, NaN(1,n_steps_rep), 'Color',col_str,'LineWidth',3);
+ball = plot(ax_t, t_axis_rep(1), 0, 'o','MarkerSize',colours.ballSize,'LineStyle','none');
+set(ball,'MarkerFaceColor','none','MarkerEdgeColor',colours.(task_leg),'LineWidth',2);
+cursor_line = xline(ax_t, 0, colours.cursor, 'LineWidth',1.5);
+ylim(ax_t, [-task_level*0.2, task_level*1.6]);
+xlim(ax_t, [t_axis_rep(1), t_axis_rep(end)]);
+xlabel(ax_t,'Time (s)','Color',colours.text); ylabel(ax_t,'Force (%MVC)','Color',colours.text);
+
+for ct = 3:-1:1
+    title(ax_t, sprintf('Fatigue protocol — starting in %d... (Q to stop anytime)', ct), ...
+        'Color',colours.text,'FontSize',13);
+    drawnow; pause(1);
+end
+sync_flush(tcpSocket, bytesPerBlock);
+
+rep_force = {}; rep_emg = {}; rep_extra = {};
+rep_num = 0;
+render_interval = 0.075; t_render = tic;
+
+quit_flag = false;
+while ~quit_flag
+    rep_num = rep_num + 1;
+    set(user_line,'YData',NaN(1,n_steps_rep));
+    title(ax_t, sprintf('Rep %d — %s @ %d%%MVC — FOLLOW THE LINE (Q to stop)', ...
+        rep_num, upper(task_leg), round(task_level*100)), 'Color',colours.text,'FontSize',13);
+
+    n_samples_rep = n_steps_rep * blockSamples;
+    rf = zeros(7, n_samples_rep);
+    re = zeros(n_emg, n_samples_rep);
+    rx = zeros(numel(extra_channels), n_samples_rep);
+    user_hist = NaN(1, n_steps_rep);
+    col = 1;
+
+    for k = 1:n_steps_rep
+        while tcpSocket.BytesAvailable < bytesPerBlock, pause(0.001); end
+        D = readBlockNovecento(tcpSocket, PacketSize1Block, nPeriods500, Ptr_IN, nGrids, mult, accMult, blockSamples);
+
+        if strcmp(force_dir,'push')
+            fL = -(mean(double(D(force_left,:))) - offset_L) * force_scale_L;
+            fR =  (mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        else
+            fL =  (mean(double(D(force_left,:))) - offset_L) * force_scale_L;
+            fR = -(mean(double(D(force_right,:))) - offset_R) * force_scale_R;
+        end
+        fS = fL + fR;
+        dL = fL/mvc_value; dR = fR/mvc_value; dS = fS/mvc_value;
+        switch task_leg
+            case 'left',      disp_val = dL;
+            case 'right',     disp_val = dR;
+            case 'bilateral', disp_val = dS;
+        end
+
+        user_hist(k) = disp_val;
+        set(user_line,'YData',user_hist);
+        set(ball,'XData',t_axis_rep(k),'YData',disp_val);
+        set(cursor_line,'Value',t_axis_rep(k));
+
+        idx_end = min(col+blockSamples-1, n_samples_rep);
+        len = idx_end - col + 1;
+        if strcmp(force_dir,'push')
+            rf(1,col:idx_end) = (double(D(force_left,1:len)) - offset_L) * force_scale_L;
+            rf(2,col:idx_end) = (double(D(force_right,1:len)) - offset_R) * force_scale_R;
+        else
+            rf(1,col:idx_end) = -(double(D(force_left,1:len)) - offset_L) * force_scale_L;
+            rf(2,col:idx_end) = -(double(D(force_right,1:len)) - offset_R) * force_scale_R;
+        end
+        rf(3,col:idx_end) = rf(1,col:idx_end) + rf(2,col:idx_end);
+        rf(4,col:idx_end) = rf(1,col:idx_end) / mvc_value;
+        rf(5,col:idx_end) = rf(2,col:idx_end) / mvc_value;
+        rf(6,col:idx_end) = rf(3,col:idx_end) / mvc_value;
+        if k < n_steps_rep
+            rf(7,col:idx_end) = linspace(single_trap(k), single_trap(k+1), len);
+        else
+            rf(7,col:idx_end) = single_trap(k);
+        end
+        re(:,col:idx_end) = double(D(emg_channels,1:len)) * ConvFact;
+        rx(:,col:idx_end) = D(extra_channels,1:len);
+        col = col + len;
+
+        if toc(t_render) >= render_interval
+            drawnow limitrate; t_render = tic;
+        end
+
+        if strcmp(guidata(task_fig).pressed, 'q')
+            quit_flag = true; break
+        end
+    end
+
+    rep_force{end+1} = rf(:,1:col-1);
+    rep_emg{end+1}   = re(:,1:col-1);
+    rep_extra{end+1} = rx(:,1:col-1);
+end
+
+task_force = cat(2, rep_force{:});
+task_emg   = cat(2, rep_emg{:});
+task_extra = cat(2, rep_extra{:});
+
+title(ax_t, sprintf('Fatigue protocol complete — %d reps.', rep_num), 'Color',colours.text,'FontSize',13);
+drawnow;
+close(task_fig);
+fprintf('Multi-trap fatigue: %d reps recorded.\n', rep_num);
 end
