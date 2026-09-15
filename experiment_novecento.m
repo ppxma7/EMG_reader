@@ -126,6 +126,9 @@ force_scale_R = 0.01905;
 % 254.54x + 10.173
 % (1 / 254.54) * 9.81 = 0.0385 N per count
 
+% Arm rig
+% (1/ 531.79 )*9.81 = 0.0185 
+
 %force_scale_L = 1;   
 %force_scale_R = 1;   
 
