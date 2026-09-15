@@ -83,8 +83,27 @@ fprintf('\nConnected to Novecento+.\n');
 GetSetCmd    = zeros(1,2);
 GetSetCmd(1) = 1;
 GetSetCmd(2) = CRC8(GetSetCmd,1);
-write(tcpSocket, GetSetCmd, 'uint8');
-Settings = read(tcpSocket, 20, 'uint8')';
+
+maxRetries = 5;
+for attempt = 1:maxRetries
+    flush(tcpSocket);
+    write(tcpSocket, GetSetCmd, 'uint8');
+    while tcpSocket.NumBytesAvailable < 20
+        pause(0.01);
+    end
+    Settings = read(tcpSocket, 20, 'uint8')';
+    if Settings(2) == 5   % < BIO64HD's  probe code
+        break;
+    end
+    if attempt == maxRetries
+        warning('Probe code still unexpected after %d attempts, proceeding anyway.', maxRetries);
+    end
+    pause(0.5);
+end
+% 
+% 
+% write(tcpSocket, GetSetCmd, 'uint8');
+% Settings = read(tcpSocket, 20, 'uint8')';
 
 ChVsType = [0 14 22 38 46 70 102 0 0 0 0 0 0 0 0 0];
 NumChan = zeros(10,1);
