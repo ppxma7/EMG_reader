@@ -18,13 +18,15 @@ mvcLeft      = 200;
 mvcRight     = 200;
 mvc_duration = 3; 
 
-task_shape  = 'trap';
+% multi_trap is Avi's fatigue protocol
+% multi_target is prototype - dont use
+task_shape  = 'trap'; % 'trap' | 'sombrero' | 'mcon' | 'multi_trap' | 'multi_target' | 'half-sombrero'
 task_level  = 0.1;
 task_leg    = 'right';
 trap_ramp_s = 5;
 trap_hold_s = 10;
-lead_in_s   = 5;
-multi_trap_rest_s = 2;
+lead_in_s   = 5; % normal traps use this for lead in and lead out
+multi_trap_rest_s = 2; % lead out for multi_trap (fatigue)
 
 use_constant_slope = true;
 brim_height = 0.4;
@@ -1254,7 +1256,7 @@ hold_steps = round(trap_hold_s * updates_per_sec);
 lead_steps = round(lead_in_s   * updates_per_sec);
 rest_steps = round(multi_trap_rest_s * updates_per_sec);
 
-single_trap = [linspace(0,task_level,ramp_steps), task_level*ones(1,hold_steps), ...
+single_trap = [zeros(1,lead_steps), linspace(0,task_level,ramp_steps), task_level*ones(1,hold_steps), ...
                linspace(task_level,0,ramp_steps), zeros(1,rest_steps)];
 n_steps_rep = numel(single_trap);
 t_axis_rep  = (0:n_steps_rep-1) * (blockSamples/sampFreq);
@@ -1283,7 +1285,7 @@ for ct = 3:-1:1
         'Color',colours.text,'FontSize',13);
     drawnow; pause(1);
 end
-sync_flush(tcpSocket, bytesPerBlock);
+clear_tcp_backlog(tcpSocket, bytesPerBlock);
 
 rep_force = {}; rep_emg = {}; rep_extra = {};
 rep_num = 0;
