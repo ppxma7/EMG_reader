@@ -75,7 +75,7 @@ IP_USB   = '169.254.1.10';
 IP_WiFi  = '192.168.1.1';
 TCPPort  = 23456;
 
-nGrids   = 6;         % number of BIO64HD (64ch) grids in use — increase up to 6 (IN1..IN6)
+nGrids   = 1;         % number of BIO64HD (64ch) grids in use — increase up to 6 (IN1..IN6)
 FSelAux  = 2;          % rear AUX/LOAD CELL block sampling rate: 1=500,2=2000,3=4000,4=8000 Hz
 AuxFsampCode = [0 16 32 48];  % ACQ_SETT_A codes for the 4 rates above
 FsampVal     = [500 2000 4000 8000];
@@ -119,8 +119,8 @@ ConvFact = 0.0002861;   % mV per count for HRES=0, Gain code 00 (286.1 nV resolu
 
 % S-type
 % (1 / 514.98) * 9.81 = 0.01905 N per count
-force_scale_L = 0.01905;   
-force_scale_R = 0.01905;   
+% force_scale_L = 0.01905;   
+% force_scale_R = 0.01905;   
 
 % B1411991 load cell
 % 254.54x + 10.173
@@ -129,8 +129,8 @@ force_scale_R = 0.01905;
 % Arm rig
 % (1/ 531.79 )*9.81 = 0.0185 
 
-%force_scale_L = 1;   
-%force_scale_R = 1;   
+force_scale_L = 0.0185 ;   
+force_scale_R = 0.0185 ;   
 
 datapath = 'C:\Users\masgh\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
 
@@ -828,8 +828,12 @@ title(ax_t, sprintf('%s — %s @ %d%% MVC — FOLLOW THE LINE', ...
     upper(task_leg(1:min(4,end))), upper(task_shape), round(task_level*100)), ...
     'Color',colours.text,'FontSize',13);
 drawnow;
-%flush(tcpSocket);
+
 clear_tcp_backlog(tcpSocket, bytesPerBlock);
+
+% --- trigger high: recording started ---
+GetSetCmd = [7, CRC8(7,1)];
+write(tcpSocket, GetSetCmd, 'uint8');
 
 user_force_hist = NaN(1, n_steps);
 
@@ -899,6 +903,12 @@ end
 
 title(ax_t, 'Task complete.', 'Color',colours.text,'FontSize',13);
 drawnow;
+
+% --- trigger low: recording stopped ---
+GetSetCmd = [6, CRC8(6,1)];
+write(tcpSocket, GetSetCmd, 'uint8');
+
+
 close(task_fig);
 task_force = task_force(:, 1:col-1);
 task_emg   = task_emg(:,   1:col-1);
