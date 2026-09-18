@@ -129,6 +129,13 @@ ConvFact = 0.0002861;   % mV per count for HRES=0, Gain code 00 (286.1 nV resolu
 % Arm rig
 % (1/ 531.79 )*9.81 = 0.0185 
 
+
+% RIGHT KE2024 Y = (1 / 259.58) * 9.818 = 0.0378
+% LEFT KEF060 Y = (1 / 248.63) * 9.818 = 0.0395
+
+% force_scale_L = 10.0/65536;   % use this when using aux in
+% force_scale_R = 10.0/65536;  
+
 force_scale_L = 0.0185 ;   
 force_scale_R = 0.0185 ;   
 
@@ -254,6 +261,8 @@ tcpSocket.InputBufferSize = bytesPerBlock * 20;
 %   rows end-3 : end          -> accessory ch 1-4 (32-bit: counter, status/trigger, blk ctr, DAC ctr)
 force_left  = nGrids*70 + 5;
 force_right = nGrids*70 + 6;
+% force_left  = nGrids*70 + 1; % -> use this for AUX1,2
+% force_right = nGrids*70 + 2;
 accStart    = nGrids*70 + 16 + 1;
 extra_channels  = accStart : (accStart+3);  % ACC1-ACC4
 % later do this :
