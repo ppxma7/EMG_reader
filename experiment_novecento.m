@@ -27,11 +27,10 @@ trap_ramp_s = 5;
 trap_hold_s = 10;
 lead_in_s   = 5; % normal traps use this for lead in and lead out
 multi_trap_rest_s = 2; % lead out for multi_trap (fatigue)
-
-use_constant_slope = true;
-brim_height = 0.4;
-brim_length = 5;
-brim_ramp_to_peak = 10;
+use_constant_slope = true; % ignores manual ramp to peak, calculates length based on height
+brim_height = 1/3; % set this to % of MVC you want plateau 1 to be
+brim_length = 10; % plateau length 
+brim_ramp_to_peak = 10; % only taken into account if use constant slop = false
 mcon_cycles = 8;
 left_multi_target  = 0.5;
 right_multi_target = 0.25;
