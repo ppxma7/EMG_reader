@@ -1,18 +1,17 @@
-%% experiment_novecento.m
+%% experiment_novecento_autodetect.m
 % Live force plot + EMG recording via Novecento+ (direct TCP, not SyncStation)
 % Copies experiment_muovi6.m functionality but uses the Novecento+
 % communication protocol (15-byte ConfString, per-input probe config,
 % 16-ch rear AUX block incl. LOAD CELL 1/2) instead of Muovi/SyncStation.
 %
 % MA Sept 2026
+%
+% Updates - auto detects active channels. Must have at least 2 plugged in
 
 close all; clear all; clc;
 
 datapath = 'C:\Users\masgh\The University of Nottingham\Mathew Piasecki (staff) - ePhys Lab\Michael\';
 
-%% THIS MUST BE AT LEAST 2 OTHERWISE SLOWDOWN WILL OCCUR
-nGrids   = 2;         % number of BIO64HD (64ch) grids in use — increase up to 6 (IN1..IN6)
-%%
 subject   = 'sub01';
 force_dir = 'push';
 study     = 'NOVE';
@@ -77,12 +76,11 @@ right_multi_target = 0.25;
 % force_scale_R = 10.0/65536;  
 
 force_scale_L = 0.0185 ;   
-force_scale_R = 0.0185 ;   
+force_scale_R = 0.0185 ; 
 
 % =========================================================================
 % Other user settings
 % =========================================================================
-
 
 colours.bg          = 'k';
 colours.grid        = [0.3 0.3 0.3];
@@ -123,17 +121,17 @@ IP_USB   = '169.254.1.10';
 IP_WiFi  = '192.168.1.1';
 TCPPort  = 23456;
 
-FSelAux  = 2;          % rear AUX/LOAD CELL block sampling rate: 1=500,2=2000,3=4000,4=8000 Hz
-AuxFsampCode = [0 16 32 48];  % ACQ_SETT_A codes for the 4 rates above
+BIO64HD_CODE = 5;      % probe code reported by Novecento for BIO64HD
+nGrids   = 0;          % placeholder: auto-detected below
+FSelAux  = 2;          % rear AUX/LOAD CELL rate: 1=500,2=2000,3=4000,4=8000 Hz
+AuxFsampCode = [0 16 32 48];
 FsampVal     = [500 2000 4000 8000];
 
-GridFsampSel = 1;      % INx_CONF FSAMP<1:0> code for the grids: 00=500 01=2000 10=4000 11=8000
-sampFreq     = FsampVal(GridFsampSel+1);   % must equal the grid rate used below (2000 Hz default)
-if AuxFsampCode(FSelAux) == 0 && FSelAux ~= 1
-    error('FSelAux/AuxFsampCode mismatch');
-end
+GridFsampSel = 1;      % INx_CONF FSAMP: 0=500 1=2000 2=4000 3=8000
+sampFreq     = FsampVal(GridFsampSel+1);
 if FsampVal(FSelAux) ~= sampFreq
-    warning('AUX (load cell) rate (%d Hz) differs from grid EMG rate (%d Hz) — this script assumes they match.', FsampVal(FSelAux), sampFreq);
+    warning('AUX (load cell) rate (%d Hz) differs from grid EMG rate (%d Hz) — script assumes they match.', ...
+            FsampVal(FSelAux), sampFreq);
 end
 
 blockPeriods500 = 13;                 % number of 500Hz base periods read per GUI update
@@ -142,45 +140,20 @@ accMult         = 8000/500;           % accessory samples per base period (16 @ 
 blockSamples    = mult * blockPeriods500;   % samples-per-channel per read, at sampFreq
 % DISPLAY RATE: sampFreq/blockSamples updates/sec (~38 Hz @ defaults, similar to muovi6)
 
+
 n_bio_per_grid = 64;
-n_ext_per_grid = 6;              % 4 IMU + 2 ACC
-NumChanGrid    = n_bio_per_grid + n_ext_per_grid;  % 70, BIO64HD probe type
-n_emg          = nGrids * n_bio_per_grid;
+n_ext_per_grid = 6;                              % 4 IMU + 2 ACC
+NumChanGrid    = n_bio_per_grid + n_ext_per_grid;  % 70
 
-ConvFact = 0.0002861;   % mV per count for HRES=0, Gain code 00 (286.1 nV resolution)
+ConvFact = 0.0002861;   % mV per count (HRES=0, gain code 00)
 
-
-% =========================================================================
-% BUILD ConfString (15 bytes, Novecento+ protocol v2.3)
-% =========================================================================
+% per-input settings (filled after detection)
 IN_Active = zeros(10,1);
 Mode  = zeros(10,1);
 Gain  = zeros(10,1);
 HPF   = zeros(10,1);
 HRES  = zeros(10,1);
 Fsamp = zeros(10,1);
-
-for g = 1:nGrids
-    IN_Active(g) = 1;
-    Mode(g)  = 0;               % monopolar
-    Gain(g)  = 0;                % preamp gain 8 (HRES=0) -> range +/-9.375mV
-    HPF(g)   = 1;                 % 10.5 Hz HPF @ 2000Hz
-    HRES(g)  = 0;                 % 16-bit
-    Fsamp(g) = GridFsampSel;      % 2000 Hz
-end
-
-ConfString = zeros(1,15);
-ConfString(1) = bin2dec('10000000') + AuxFsampCode(FSelAux) + IN_Active(10)*2 + IN_Active(9);
-ConfString(2) = 0;
-for i = 1:8
-    ConfString(2) = ConfString(2) + IN_Active(i)*(2^(i-1));
-end
-ConfString(3) = 0;   % AN_OUT_A — analog out unused
-ConfString(4) = 1;   % AN_OUT_B — analog out channel unused
-for i = 1:10
-    ConfString(4+i) = Mode(i)*64 + Gain(i)*16 + HPF(i)*8 + HRES(i)*4 + Fsamp(i);
-end
-ConfString(15) = CRC8(ConfString, 14);
 
 % =========================================================================
 % CONNECT
@@ -194,16 +167,14 @@ tcpSocket.ByteOrder = "little-endian";
 tcpSocket.Timeout = 100;
 disp('Connected to Novecento+');
 
-% 1. Flush any leftover bytes from previous crashes/runs
 pause(1);
 flush(tcpSocket);
 
-% --- Hardware config request: confirm probe types on the active inputs ---
+% --- hardware config request: read probe types on all inputs ---
 GetSetCmd = zeros(1,2);
 GetSetCmd(1) = 1;
 GetSetCmd(2) = CRC8(GetSetCmd,1);
 
-% add this -------------
 maxRetries = 5;
 for attempt = 1:maxRetries
     flush(tcpSocket);
@@ -212,68 +183,82 @@ for attempt = 1:maxRetries
         pause(0.01);
     end
     Settings = read(tcpSocket, 20, 'uint8')';
-    if Settings(2) == 5   % < BIO64HD's  probe code
+    if any(Settings(2:11) == BIO64HD_CODE)
         break;
     end
     if attempt == maxRetries
-        warning('Probe code still unexpected after %d attempts, proceeding anyway.', maxRetries);
+        warning('No BIO64HD reported after %d attempts, proceeding anyway.', maxRetries);
     end
     pause(0.5);
 end
-% ---------------------------
 
-% write(tcpSocket, GetSetCmd, 'uint8');
-% while tcpSocket.NumBytesAvailable < 20
-%     pause(0.01);
-% end
-% Settings = read(tcpSocket, 20, 'uint8')';
-
+% =========================================================================
+% AUTO-DETECT GRIDS
+% =========================================================================
 ChVsType = [0 14 22 38 46 70 102 0 0 0 0 0 0 0 0 0];
-NumChan  = zeros(10,1);
-Ptr_IN   = zeros(11,1);
-Size_IN  = zeros(10,1);
-Ptr_IN(1) = 1;
 
+probeCodes = Settings(2:11);
+IN_Active  = double(probeCodes(:) == BIO64HD_CODE);
+nGrids     = sum(IN_Active);
+if nGrids == 0
+    error('No BIO64HD detected on any input.');
+end
+fprintf('Detected %d BIO64HD grid(s) on input(s): %s\n', nGrids, mat2str(find(IN_Active)'));
 
 for i = 1:10
-
-    NumChan(i) = ChVsType(Settings(i+1)+1);
-
-    fprintf('Input %d: probe code = %d, channels = %d\n', ...
-        i, Settings(i+1), NumChan(i));
-
-    if IN_Active(i) == 1 && NumChan(i) ~= NumChanGrid
-        error(['Input %d is configured as active, but Novecento reports ' ...
-               'probe code %d (%d channels). Expected BIO64HD (70 channels).'], ...
-               i, Settings(i+1), NumChan(i));
+    fprintf('Input %d: probe code = %d, channels = %d, active = %d\n', ...
+        i, Settings(i+1), ChVsType(Settings(i+1)+1), IN_Active(i));
+    if IN_Active(i)
+        Mode(i)  = 0;              % monopolar
+        Gain(i)  = 0;
+        HPF(i)   = 1;              % 10.5 Hz HPF @ 2000 Hz
+        HRES(i)  = 0;              % 16-bit
+        Fsamp(i) = GridFsampSel;
     end
+end
 
-    if IN_Active(i) == 1
-        Size_IN(i) = mult * NumChan(i);
-    else
-        Size_IN(i) = 0;
-    end
+n_emg = nGrids * n_bio_per_grid;
 
+% =========================================================================
+% BUILD ConfString (15 bytes, Novecento+ protocol v2.3)
+% =========================================================================
+ConfString = zeros(1,15);
+ConfString(1) = bin2dec('10000000') + AuxFsampCode(FSelAux) + IN_Active(10)*2 + IN_Active(9);
+for i = 1:8
+    ConfString(2) = ConfString(2) + IN_Active(i)*(2^(i-1));
+end
+ConfString(3) = 0;   % AN_OUT_A unused
+ConfString(4) = 1;   % AN_OUT_B unused
+for i = 1:10
+    ConfString(4+i) = Mode(i)*64 + Gain(i)*16 + HPF(i)*8 + HRES(i)*4 + Fsamp(i);
+end
+ConfString(15) = CRC8(ConfString, 14);
+
+% --- per-input sizes / pointers ---
+NumChan = zeros(10,1);
+Ptr_IN  = zeros(11,1);
+Size_IN = zeros(10,1);
+Ptr_IN(1) = 1;
+for i = 1:10
+    NumChan(i)  = ChVsType(Settings(i+1)+1);
+    Size_IN(i)  = IN_Active(i) * mult * NumChan(i);
     Ptr_IN(i+1) = Ptr_IN(i) + Size_IN(i);
 end
 
-PacketSize1Block = (Ptr_IN(11)-1) + 16*mult + 128;   % grids + AUX(16ch) + accessory(4ch*32bit@8kHz)
-bytesPerBlock     = PacketSize1Block * blockPeriods500 * 2;   % int16 = 2 bytes
+PacketSize1Block = (Ptr_IN(11)-1) + 16*mult + 128;
+bytesPerBlock    = PacketSize1Block * blockPeriods500 * 2;
 tcpSocket.InputBufferSize = bytesPerBlock * 20;
 
-% channel row layout of the combined D matrix returned by readBlock():
-%   rows 1 : nGrids*70        -> grids, each [64 BIO, 4 IMU, 2 ACC]
-%   rows nGrids*70+1 : +16    -> rear AUX block: AUX1-4, LOADCELL_L, LOADCELL_R, EXT1-10
-%   rows end-3 : end          -> accessory ch 1-4 (32-bit: counter, status/trigger, blk ctr, DAC ctr)
+% D matrix rows (active grids stacked in input order):
+%   1 : nGrids*70         grids [64 BIO, 4 IMU, 2 ACC]
+%   +16                   AUX1-4, LOADCELL_L, LOADCELL_R, EXT1-10
+%   last 4                accessory ch 1-4
 force_left  = nGrids*70 + 5;
 force_right = nGrids*70 + 6;
 % force_left  = nGrids*70 + 1; % -> use this for AUX1,2
 % force_right = nGrids*70 + 2;
 accStart    = nGrids*70 + 16 + 1;
-extra_channels  = accStart : (accStart+3);  % ACC1-ACC4
-% later do this :
-% ACC2 = uint32(signal.extra(2,:));
-% trigger = bitget(ACC2,1);
+extra_channels = accStart : (accStart+3);
 
 emg_channels = [];
 for g = 1:nGrids
@@ -281,13 +266,12 @@ for g = 1:nGrids
     emg_channels = [emg_channels, base+1 : base+64]; %#ok<AGROW>
 end
 
-% --- send the acquisition-start configuration ---
+% --- start acquisition ---
 write(tcpSocket, ConfString, 'uint8');
 pause(0.2);
-%flush(tcpSocket);
 clear_tcp_backlog(tcpSocket, bytesPerBlock);
 disp('Novecento+ streaming started.');
-
+  
 
 % =========================================================================
 % BASELINE OFFSET (2 seconds)
